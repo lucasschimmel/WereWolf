@@ -19,3 +19,16 @@ In a second terminal, from the repository root, run `bun run dev`. Open the Vite
 `develop` is the integration branch. Submit feature branches to `develop`. Release PRs promote `develop` to `main`.
 
 The `apps/landing` directory is reserved for the future landing page.
+
+## Playtest with bots
+
+With Node.js 24 installed, create a room in the browser, copy its six-character code, then run this from the repository root:
+
+```sh
+bun run playtest CODE add 7
+bun run playtest CODE
+```
+
+Select your character, mark yourself ready, and start the match as host. In the CLI, use `status` to see bot roles, available actions, and targets. Use `play Bot-01 Pseudo` to submit an action, `auto` to fill pending ordinary bot actions, or `next` to advance one server step. Use `help` for potions, abstentions, readiness, and the journal. Changing the room rules resets readiness, so run `ready` again after changing modes.
+
+The CLI uses the game's cloud development deployment. `next` requires the authenticated Convex CLI and operates only on the active development room. Bot sessions are kept locally in the ignored `.codex/dev-rooms/` directory, so restarting the CLI preserves control.

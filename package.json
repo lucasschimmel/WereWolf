@@ -1,11 +1,13 @@
 {
   "name": "werewolf",
   "private": true,
+  "type": "module",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
     "dev": "cd apps/game && vite --host 0.0.0.0",
+    "playtest": "node --env-file-if-exists=apps/game/.env.local scripts/playtest.ts",
     "build": "cd apps/game && vite build",
     "check": "biome check . && tsc --noEmit -p apps/game/tsconfig.json",
     "test": "bun test"
