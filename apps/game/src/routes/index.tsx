@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ConvexProvider, ConvexReactClient, useMutation } from "convex/react";
-import { type FormEvent, useEffect, useState } from "react";
+import { ArrowRight, DoorOpen, Sparkles } from "lucide-react";
+import { type FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Room } from "../rooms/Room";
 import { errorMessage, guestKey, session } from "../session";
@@ -12,14 +13,30 @@ export const Route = createFileRoute("/")({
     room: typeof search.room === "string" ? search.room : undefined,
   }),
 });
+
+const Village = lazy(() => import("../scene/Village"));
 const url = import.meta.env.VITE_CONVEX_URL;
 const client = url ? new ConvexReactClient(url) : undefined;
+const noop = () => undefined;
+const showcase = {
+  showcase: true,
+  members: [],
+  me: "",
+  positions: [],
+  events: [],
+  targets: [],
+  onMove: noop,
+  onSelect: noop,
+};
+
 function Home() {
   if (!client)
     return (
-      <main className="entry">
-        <h1>WereWolf</h1>
-        <p>Configure VITE_CONVEX_URL pour ouvrir le village.</p>
+      <main className="gate">
+        <section className="gate-card">
+          <h1>WereWolf</h1>
+          <p>Configure VITE_CONVEX_URL pour ouvrir le village.</p>
+        </section>
       </main>
     );
   return (
@@ -35,7 +52,7 @@ function Gate() {
   const [intent, setIntent] = useState<"create" | "join">(
     invite ? "join" : "create",
   );
-  const [code, setCode] = useState(invite ?? "");
+  const [code, setCode] = useState(invite?.toUpperCase() ?? "");
   const [name, setName] = useState("");
   const [active, setActive] = useState<{ code: string; key: string }>();
   const [resume, setResume] = useState<string>();
@@ -49,7 +66,10 @@ function Gate() {
     if (invite && session.has(invite.toUpperCase()))
       setActive({ code: invite.toUpperCase(), key });
     setResume(session.last());
+    const stored = localStorage.getItem("werewolf.name");
+    if (stored) setName(stored);
   }, [invite]);
+
   function enter(room: string, key: string) {
     session.save(room);
     setActive({ code: room, key });
@@ -61,6 +81,7 @@ function Gate() {
     setError("");
     try {
       const key = guestKey();
+      localStorage.setItem("werewolf.name", name.trim());
       const room =
         intent === "create"
           ? await create({ key, name })
@@ -86,34 +107,32 @@ function Gate() {
     );
   return (
     <main className="entry">
-      <div className="entry-art" aria-hidden="true">
-        <div className="moon" />
-        <div className="fog" />
-        <div className="ridgeline far" />
-        <div className="ridgeline near" />
-      </div>
+      <Suspense fallback={null}>
+        <Village {...showcase} />
+      </Suspense>
+      <div className="entry-shade" aria-hidden="true" />
       <section className="entry-copy">
-        <div className="brand">
-          <span aria-hidden="true">◈</span> WereWolf
-        </div>
+        <p className="entry-kicker">
+          <Sparkles size={14} /> Loup-Garou entre amis · 8 à 15 joueurs
+        </p>
         <h1>
           Le village
           <br />
-          s’endort.
+          <em>s’endort.</em>
         </h1>
         <p>
-          Une partie de Loup-Garou en 3D, entre 8 et 15 amis. Retrouvez-vous en
-          vocal sur Discord.
+          Une place, un puits, des lanternes — et quelques loups parmi vous.
+          Retrouvez-vous en vocal sur Discord, le jeu s’occupe du reste.
         </p>
       </section>
-      <section className="entry-panel panel">
-        <div className="switch">
+      <section className="entry-card">
+        <div className="segmented wide">
           <button
             type="button"
             aria-pressed={intent === "create"}
             onClick={() => setIntent("create")}
           >
-            Créer
+            Créer un salon
           </button>
           <button
             type="button"
@@ -123,24 +142,23 @@ function Gate() {
             Rejoindre
           </button>
         </div>
-        <h2>
-          {intent === "create" ? "Ouvrir un salon" : "Rejoindre un salon"}
-        </h2>
         <form onSubmit={submit}>
-          <label>
-            Pseudo
+          <label className="field">
+            <span>Ton nom au village</span>
             <input
               required
               maxLength={20}
               value={name}
+              autoComplete="nickname"
               onChange={(event) => setName(event.target.value)}
-              placeholder="Ton nom au village"
+              placeholder="Ex. Margot"
             />
           </label>
           {intent === "join" && (
-            <label>
-              Code du salon
+            <label className="field">
+              <span>Code du salon</span>
               <input
+                className="code-input"
                 required
                 minLength={6}
                 maxLength={6}
@@ -148,6 +166,8 @@ function Gate() {
                 onChange={(event) => setCode(event.target.value.toUpperCase())}
                 placeholder="ABC234"
                 autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
               />
             </label>
           )}
@@ -156,21 +176,22 @@ function Gate() {
               {error}
             </p>
           )}
-          <button type="submit" className="primary" disabled={pending}>
+          <button type="submit" className="primary big" disabled={pending}>
             {pending
-              ? "Connexion…"
+              ? "Ouverture des portes…"
               : intent === "create"
-                ? "Créer la partie"
-                : "Rejoindre la partie"}
+                ? "Allumer les lanternes"
+                : "Entrer au village"}
+            {!pending && <ArrowRight size={18} />}
           </button>
         </form>
         {resume && (
           <button
             type="button"
-            className="link"
+            className="ghost resume"
             onClick={() => enter(resume, guestKey())}
           >
-            Reprendre le salon {resume}
+            <DoorOpen size={16} /> Reprendre le salon <b>{resume}</b>
           </button>
         )}
       </section>

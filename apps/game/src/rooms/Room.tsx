@@ -1,31 +1,34 @@
 import { useMutation, useQuery } from "convex/react";
-import { Component, lazy, type ReactNode, Suspense, useState } from "react";
-import { api } from "../../convex/_generated/api";
+import { Home, Link2, Pause, ScrollText, Settings2, Users } from "lucide-react";
 import {
-  cardFor,
-  characters,
-  deckFor,
-  defaultSettings,
-  type Mode,
-  minForMode,
-  modes,
-  type Settings,
-} from "../../shared/rules";
+  Component,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { api } from "../../convex/_generated/api";
+import { type Camp, cardFor } from "../../shared/rules";
+import type { SceneState } from "../scene/Village";
 import { type Credentials, errorMessage } from "../session";
-import { MatchPanel } from "./MatchPanel";
-import { Workshop } from "./Workshop";
+import { RoleCard } from "../ui/cards";
+import { Drawer, Joystick, SettingsPanel } from "../ui/controls";
+import { Herald, RoleReveal, useHerald } from "../ui/Herald";
+import { PhaseClock } from "../ui/PhaseClock";
+import { ActionDock } from "./ActionDock";
+import { EndScreen } from "./EndScreen";
+import { Journal, Roster } from "./Ledger";
+import { Lobby } from "./Lobby";
+import type { MatchView, View } from "./model";
 
 const Village = lazy(() => import("../scene/Village"));
-const preset = "werewolf.workshop";
-function workshopPreset(): Settings {
-  try {
-    const stored = localStorage.getItem(preset);
-    if (stored) return JSON.parse(stored);
-  } catch {
-    localStorage.removeItem(preset);
-  }
-  return { ...defaultSettings, mode: "workshop" };
-}
+type Panel = "roster" | "journal" | "settings" | null;
+type Toast = { id: number; text: string; tone: "error" | "info" };
+
 export function Room({
   credentials,
   back,
@@ -39,6 +42,7 @@ export function Room({
     </RoomBoundary>
   );
 }
+
 class RoomBoundary extends Component<
   { children: ReactNode; back: () => void },
   { error?: unknown }
@@ -50,11 +54,11 @@ class RoomBoundary extends Component<
   render() {
     if (this.state.error)
       return (
-        <main className="entry">
-          <section className="panel entry-panel">
+        <main className="gate">
+          <section className="gate-card">
             <h1>Connexion interrompue</h1>
             <p role="alert">{errorMessage(this.state.error)}</p>
-            <button type="button" onClick={this.props.back}>
+            <button type="button" className="primary" onClick={this.props.back}>
               Retour à l’accueil
             </button>
           </section>
@@ -63,6 +67,62 @@ class RoomBoundary extends Component<
     return this.props.children;
   }
 }
+
+function useNow(interval = 250) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), interval);
+    return () => window.clearInterval(timer);
+  }, [interval]);
+  return now;
+}
+
+function useCoarse() {
+  const [coarse, setCoarse] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(pointer: coarse)");
+    setCoarse(query.matches);
+    const change = () => setCoarse(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  return coarse;
+}
+
+function sceneState(
+  room: View,
+  match: MatchView | null,
+  positions: SceneState["positions"],
+) {
+  return {
+    showcase: false,
+    me: room.me,
+    positions,
+    phase: match?.phase,
+    events: match?.events ?? [],
+    role: match?.role,
+    outcome: match?.outcome,
+    targets: match?.action ? (match.targets ?? []) : [],
+    selected: match?.action ? match.selected || undefined : undefined,
+    members: room.members.map((member) => {
+      const card = member.role
+        ? cardFor(member.role, room.settings)
+        : undefined;
+      return {
+        id: member.id,
+        name: member.name,
+        character: member.character,
+        alive: member.alive,
+        host: member.host,
+        ready: member.ready,
+        role: card?.name,
+        camp: card?.camp as Camp | undefined,
+        mate: !!match?.mates.includes(member.id) && member.id !== room.me,
+      };
+    }),
+  };
+}
+
 function RoomContent({
   credentials,
   back,
@@ -72,289 +132,344 @@ function RoomContent({
 }) {
   const room = useQuery(api.game.view, credentials);
   const positions = useQuery(api.game.positions, credentials);
-  const update = useMutation(api.rooms.profile);
-  const configure = useMutation(api.rooms.configure);
-  const start = useMutation(api.rooms.start);
-  const leave = useMutation(api.rooms.leave);
   const move = useMutation(api.game.move);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [target, setTarget] = useState("");
-  async function act(operation: () => Promise<unknown>) {
-    setError("");
-    try {
-      await operation();
-    } catch (cause) {
-      setError(errorMessage(cause));
+  const choose = useMutation(api.game.choose);
+  const pause = useMutation(api.game.pause);
+  const rematch = useMutation(api.rooms.rematch);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [reveal, setReveal] = useState(false);
+  const [lobbyOpen, setLobbyOpen] = useState(true);
+  const toastId = useRef(0);
+  const revealedFor = useRef("");
+  const intelSeen = useRef(-1);
+  const now = useNow();
+  const coarse = useCoarse();
+  const match = room?.match ?? null;
+
+  const notify = useCallback((text: string, tone: Toast["tone"] = "info") => {
+    const id = ++toastId.current;
+    setToasts((current) => [...current.slice(-2), { id, text, tone }]);
+    window.setTimeout(
+      () => setToasts((current) => current.filter((toast) => toast.id !== id)),
+      3600,
+    );
+  }, []);
+  const act = useCallback(
+    async (operation: () => Promise<unknown>) => {
+      try {
+        await operation();
+      } catch (cause) {
+        notify(errorMessage(cause), "error");
+      }
+    },
+    [notify],
+  );
+  const herald = useHerald(room, match, now);
+  const closeReveal = useCallback(() => setReveal(false), []);
+
+  useEffect(() => {
+    if (!match) {
+      revealedFor.current = "";
+      intelSeen.current = -1;
+      return;
     }
-  }
-  if (!room) return <main className="loading">Ouverture du village…</main>;
+    const key = `${room?.code}:${match.events.length === 0 ? "start" : "running"}`;
+    if (match.phase === "intro" && revealedFor.current !== key) {
+      revealedFor.current = key;
+      setReveal(true);
+    }
+    if (intelSeen.current >= 0 && match.intel.length > intelSeen.current) {
+      const [, target, result] = match.intel[match.intel.length - 1].split("|");
+      const who =
+        room?.members.find((member) => member.id === target)?.name ?? "?";
+      notify(
+        result === "active"
+          ? `Vision : ${who} a agi cette nuit.`
+          : result === "idle"
+            ? `Vision : ${who} n’a rien fait cette nuit.`
+            : `Vision : ${who} appartient ${result === "pack" ? "à la Meute" : result === "solo" ? "aux Solitaires" : "au Village"}.`,
+      );
+    }
+    intelSeen.current = match.intel.length;
+  }, [match, room?.code, room?.members, notify]);
+
+  const onMove = useCallback(
+    (pose: { x: number; z: number; yaw: number }) => {
+      void move({ ...credentials, ...pose }).catch(() => undefined);
+    },
+    [move, credentials],
+  );
+  const onSelect = useCallback(
+    (id: string) => {
+      const action = room?.match?.action;
+      if (action)
+        void act(() => choose({ ...credentials, action, target: id }));
+    },
+    [room?.match?.action, act, choose, credentials],
+  );
+  const scene = useMemo(
+    () =>
+      room
+        ? { ...sceneState(room, match, positions ?? []), onMove, onSelect }
+        : undefined,
+    [room, match, positions, onMove, onSelect],
+  );
+
+  if (!room || !scene)
+    return (
+      <main className="gate">
+        <p className="loading-line">Ouverture du village…</p>
+      </main>
+    );
   const me = room.members.find((member) => member.id === room.me);
-  if (!me) return <main className="loading">Place introuvable.</main>;
-  let deck: ReturnType<typeof deckFor> = [];
-  let deckError = "";
-  try {
-    deck = deckFor(
-      Math.max(room.members.length, minForMode(room.settings.mode)),
-      room.settings,
-    );
-  } catch (cause) {
-    deckError = cause instanceof Error ? cause.message : "Paquet invalide.";
-  }
-  const mode = room.settings.mode;
-  async function copyInvite() {
-    await navigator.clipboard.writeText(
-      new URL(`/?room=${room?.code}`, window.location.origin).toString(),
-    );
-    setMessage("Lien copié");
-  }
-  return (
-    <main className="room">
-      <header className="room-header">
-        <div className="brand">
-          <span aria-hidden="true">◈</span> WereWolf
-        </div>
-        <div className="header-right">
-          <button type="button" onClick={() => void act(copyInvite)}>
-            Inviter · <strong>{room.code}</strong>
+  if (!me)
+    return (
+      <main className="gate">
+        <section className="gate-card">
+          <h1>Place introuvable</h1>
+          <button type="button" className="primary" onClick={() => back(true)}>
+            Retour à l’accueil
           </button>
-          <button type="button" onClick={() => back(false)}>
-            Accueil
-          </button>
-        </div>
-      </header>
-      <div className="workspace">
-        <section className="world" aria-label="Village en trois dimensions">
-          <Suspense
-            fallback={<div className="loading">Chargement du village…</div>}
-          >
-            <Village
-              members={room.members}
-              me={room.me}
-              positions={positions ?? []}
-              phase={room.match?.phase}
-              onMove={(position) => {
-                void move({ ...credentials, ...position }).catch(
-                  () => undefined,
-                );
-              }}
-              onSelect={(id) => setTarget(id)}
-            />
-          </Suspense>
-          <div className="world-caption">
-            <strong>
-              {room.match?.phase === "night" ? "À l’abri" : "Place du village"}
-            </strong>
-            <span>
-              {!room.match ||
-              room.match.phase === "debate" ||
-              room.match.phase === "intro"
-                ? "ZQSD / WASD · Glisser pour regarder"
-                : "Sélectionne une cible dans le panneau"}
-            </span>
-          </div>
         </section>
-        <aside className="sidebar">
-          {(error || message) && (
-            <p
-              role={error ? "alert" : "status"}
-              className={error ? "error" : "notice"}
+      </main>
+    );
+
+  const free = !match || match.phase === "intro" || match.phase === "debate";
+  const share = async () => {
+    const url = new URL(
+      `/?room=${room.code}`,
+      window.location.origin,
+    ).toString();
+    if (coarse && navigator.share)
+      await navigator.share({
+        title: "WereWolf",
+        text: `Rejoins le village ${room.code}`,
+        url,
+      });
+    else {
+      await navigator.clipboard.writeText(url);
+      notify("Lien d’invitation copié");
+    }
+  };
+  const canPause =
+    room.isHost &&
+    match?.phase === "debate" &&
+    match.pauses > 0 &&
+    match.remaining === undefined;
+
+  return (
+    <main className={`game phase-${match?.phase ?? "lobby"}`}>
+      <Suspense
+        fallback={<div className="stage-loading">Le village s’éveille…</div>}
+      >
+        <Village {...scene} />
+      </Suspense>
+      <div className="hud">
+        <header className="topbar">
+          <div className="topbar-side">
+            <button
+              type="button"
+              className="chip invite"
+              onClick={() => void act(share)}
+              aria-label={`Inviter, code ${room.code}`}
             >
-              {error || message}
-            </p>
-          )}
-          {room.match ? (
-            <MatchPanel
-              room={room}
-              match={room.match}
-              credentials={credentials}
-              sceneTarget={target}
-              act={act}
+              <Link2 size={15} />
+              <span className="invite-code">{room.code}</span>
+            </button>
+          </div>
+          {match ? (
+            <PhaseClock
+              phase={match.phase}
+              cycle={match.cycle}
+              end={match.end}
+              now={now}
+              paused={match.remaining}
             />
           ) : (
-            <>
-              <section className="panel lobby-panel">
-                <div className="section-title">
-                  <h1>Le salon</h1>
-                  <span>{room.members.length} / 15</span>
-                </div>
-                <ul className="roster">
-                  {room.members.map((member) => (
-                    <li key={member.id}>
-                      <span
-                        className="avatar-dot"
-                        style={{
-                          background: characters[member.character].color,
-                        }}
-                      />
-                      <span>
-                        {member.name}
-                        {member.id === room.me ? " (toi)" : ""}
-                        {member.host ? " · Hôte" : ""}
-                      </span>
-                      <span className={member.ready ? "ready" : "dim"}>
-                        {member.ready ? "Prêt" : "En attente"}
-                      </span>
-                      {room.isHost && !member.host && (
-                        <button
-                          type="button"
-                          className="icon"
-                          aria-label={`Retirer ${member.name}`}
-                          onClick={() =>
-                            void act(() =>
-                              leave({ ...credentials, playerId: member.id }),
-                            )
-                          }
-                        >
-                          ×
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-              <section className="panel lobby-panel">
-                <h2>Ton personnage</h2>
-                <div className="characters">
-                  {characters.map((character, index) => (
-                    <button
-                      type="button"
-                      key={character.name}
-                      aria-pressed={index === me.character}
-                      onClick={() =>
-                        void act(() =>
-                          update({ ...credentials, character: index }),
-                        )
-                      }
-                    >
-                      <span
-                        className="pawn"
-                        aria-hidden="true"
-                        style={{
-                          background: character.color,
-                          borderColor: character.trim,
-                        }}
-                      />
-                      {character.name}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className={me.ready ? "" : "primary"}
-                  onClick={() =>
-                    void act(() => update({ ...credentials, ready: !me.ready }))
-                  }
-                >
-                  {me.ready ? "Annuler mon statut prêt" : "Je suis prêt"}
-                </button>
-              </section>
-              <section className="panel lobby-panel">
-                <h2>Règles du salon</h2>
-                {room.isHost ? (
-                  <label>
-                    Mode
-                    <select
-                      value={mode}
-                      onChange={(e) => {
-                        const selected = e.target.value as Mode;
-                        void act(() =>
-                          configure({
-                            ...credentials,
-                            settings:
-                              selected === "workshop"
-                                ? workshopPreset()
-                                : { ...defaultSettings, mode: selected },
-                          }),
-                        );
-                      }}
-                    >
-                      {Object.entries(modes).map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                          {minForMode(value as Mode) > 8
-                            ? ` · dès ${minForMode(value as Mode)}`
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <p>{modes[mode]}</p>
-                )}
-                <p className="dim">
-                  {mode === "mystery" ||
-                  (mode === "workshop" && !room.settings.reveal)
-                    ? "Cartes révélées en fin de partie."
-                    : "Cartes révélées à la mort."}
-                </p>
-                {deckError ? (
-                  <p role="alert" className="error">
-                    {deckError}
-                  </p>
-                ) : (
-                  <details>
-                    <summary>Paquet proposé · {deck.length} cartes</summary>
-                    <ul className="deck">
-                      {[...new Set(deck)].map((role) => {
-                        const card = cardFor(role, room.settings);
-                        return (
-                          <li key={role}>
-                            <b>
-                              {deck.filter((item) => item === role).length} ×{" "}
-                              {card.name}
-                            </b>
-                            <span>{card.text}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </details>
-                )}
-                {mode === "workshop" && room.isHost && (
-                  <Workshop
-                    settings={room.settings}
-                    count={room.members.length}
-                    save={(settings) =>
-                      void act(async () => {
-                        deckFor(Math.max(room.members.length, 8), settings);
-                        await configure({ ...credentials, settings });
-                        localStorage.setItem(preset, JSON.stringify(settings));
-                      })
-                    }
-                  />
-                )}
-                {room.isHost ? (
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={
-                      !!deckError ||
-                      room.members.length < minForMode(mode) ||
-                      room.members.some((member) => !member.ready)
-                    }
-                    onClick={() => void act(() => start(credentials))}
-                  >
-                    Lancer la partie
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void act(async () => {
-                        await leave(credentials);
-                        back(true);
-                      })
-                    }
-                  >
-                    Libérer ma place
-                  </button>
-                )}
-              </section>
-            </>
+            <div className="lobby-title">
+              <strong>WereWolf</strong>
+              <small>Salon d’attente</small>
+            </div>
           )}
-        </aside>
+          <div className="topbar-side end">
+            {canPause && (
+              <button
+                type="button"
+                className="chip"
+                onClick={() => void act(() => pause(credentials))}
+              >
+                <Pause size={15} />{" "}
+                <span className="hide-compact">Pause · {match.pauses}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Villageois"
+              onClick={() => setPanel("roster")}
+            >
+              <Users size={18} />
+            </button>
+            {match && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Journal du village"
+                onClick={() => setPanel("journal")}
+              >
+                <ScrollText size={18} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Réglages"
+              onClick={() => setPanel("settings")}
+            >
+              <Settings2 size={18} />
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Retour à l’accueil"
+              onClick={() => back(false)}
+            >
+              <Home size={18} />
+            </button>
+          </div>
+        </header>
+
+        <Herald item={herald} />
+
+        {match ? (
+          match.phase === "ended" ? (
+            <EndScreen
+              room={room}
+              match={match}
+              onRematch={() => void act(() => rematch(credentials))}
+            />
+          ) : (
+            <div className="hud-bottom">
+              <div className="hand">
+                <RoleCard
+                  role={match.role}
+                  settings={room.settings}
+                  size="mini"
+                  onClick={() => setReveal(true)}
+                />
+              </div>
+              <ActionDock
+                room={room}
+                match={match}
+                choose={(action, target) =>
+                  void act(() => choose({ ...credentials, action, target }))
+                }
+              />
+            </div>
+          )
+        ) : (
+          <Lobby
+            room={room}
+            credentials={credentials}
+            act={act}
+            open={lobbyOpen}
+            setOpen={setLobbyOpen}
+            onLeave={() => back(true)}
+          />
+        )}
+
+        <Joystick
+          enabled={
+            coarse && free && me.alive && !panel && !(lobbyOpen && !match)
+          }
+        />
+
+        <div className="toasts" aria-live="polite">
+          {toasts.map((toast) => (
+            <p
+              key={toast.id}
+              className={`toast ${toast.tone}`}
+              role={toast.tone === "error" ? "alert" : "status"}
+            >
+              {toast.text}
+            </p>
+          ))}
+        </div>
       </div>
+
+      <Drawer
+        open={panel === "roster"}
+        title="Villageois"
+        onClose={() => setPanel(null)}
+      >
+        <Roster room={room} />
+      </Drawer>
+      <Drawer
+        open={panel === "journal"}
+        title="Journal du village"
+        onClose={() => setPanel(null)}
+      >
+        {match && (
+          <Journal
+            events={match.events}
+            members={room.members}
+            settings={room.settings}
+          />
+        )}
+      </Drawer>
+      <Drawer
+        open={panel === "settings"}
+        title="Réglages"
+        onClose={() => setPanel(null)}
+      >
+        <SettingsPanel />
+      </Drawer>
+
+      {reveal && match && (
+        <RoleReveal
+          role={match.role}
+          settings={room.settings}
+          onClose={closeReveal}
+        >
+          <RoleCard role={match.role} settings={room.settings} />
+          {match.mates.length > 1 && (
+            <p className="reveal-note pack">
+              Ta meute :{" "}
+              {match.mates
+                .filter((id) => id !== room.me)
+                .map(
+                  (id) => room.members.find((member) => member.id === id)?.name,
+                )
+                .join(", ")}
+            </p>
+          )}
+          {match.intel.length > 0 && (
+            <ul className="reveal-note">
+              {match.intel.map((entry) => {
+                const [cycle, target, result] = entry.split("|");
+                const who = room.members.find(
+                  (member) => member.id === target,
+                )?.name;
+                return (
+                  <li key={entry}>
+                    Nuit {cycle} · {who} ·{" "}
+                    {result === "active"
+                      ? "a agi"
+                      : result === "idle"
+                        ? "n’a pas agi"
+                        : result === "pack"
+                          ? "Meute"
+                          : result === "solo"
+                            ? "Solitaire"
+                            : "Village"}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </RoleReveal>
+      )}
     </main>
   );
 }
