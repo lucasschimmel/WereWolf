@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+.output/
+.vite/
+.tanstack/
+.convex/
+.codex/
+coverage/
+playwright-report/
+test-results/
