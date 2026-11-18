@@ -11,6 +11,7 @@ function material(color: string) {
   return entry;
 }
 const unitBox = new T.BoxGeometry(1, 1, 1);
+const cones = new Map<number, T.ConeGeometry>();
 export function box(
   parent: T.Object3D,
   color: string,
@@ -37,10 +38,51 @@ function cone(
   z: number,
   sides = 7,
 ) {
-  const mesh = new T.Mesh(new T.ConeGeometry(r, h, sides), material(color));
+  let geometry = cones.get(sides);
+  if (!geometry) {
+    geometry = new T.ConeGeometry(1, 1, sides);
+    cones.set(sides, geometry);
+  }
+  const mesh = new T.Mesh(geometry, material(color));
+  mesh.scale.set(r, h, r);
   mesh.position.set(x, y, z);
   parent.add(mesh);
   return mesh;
+}
+export function batchScenery(scene: T.Scene) {
+  const groups = new Map<string, T.Mesh[]>();
+  scene.updateMatrixWorld(true);
+  scene.traverse((node) => {
+    if (!(node instanceof T.Mesh) || Array.isArray(node.material)) return;
+    const key = `${node.geometry.uuid}:${node.material.uuid}`;
+    const group = groups.get(key) ?? [];
+    group.push(node);
+    groups.set(key, group);
+  });
+  for (const meshes of groups.values()) {
+    if (meshes.length < 2) continue;
+    const { geometry, material } = meshes[0];
+    const batch = new T.InstancedMesh(geometry, material, meshes.length);
+    for (const [index, mesh] of meshes.entries()) {
+      batch.setMatrixAt(index, mesh.matrixWorld);
+      mesh.removeFromParent();
+    }
+    scene.add(batch);
+  }
+}
+
+export function seatLantern() {
+  const stand = new T.Group();
+  box(stand, "#574743", 0.34, 0.62, 0.34, 0, 0.31, 0);
+  box(stand, "#3e3236", 0.33, 0.32, 0.33, 0, 0.75, 0);
+  const flame = new T.Mesh(
+    unitBox,
+    new T.MeshBasicMaterial({ color: "#efae59" }),
+  );
+  flame.scale.set(0.24, 0.19, 0.34);
+  flame.position.y = 0.75;
+  stand.add(flame);
+  return { stand, flame };
 }
 export function village(scene: T.Scene) {
   box(scene, "#565f4d", 95, 0.3, 95, 0, -0.16, 0);
@@ -225,7 +267,5 @@ export function freePawn(group: T.Group) {
       item.material.map?.dispose();
       item.material.dispose();
     }
-    if (item instanceof T.Mesh && item.geometry !== unitBox)
-      item.geometry.dispose();
   });
 }

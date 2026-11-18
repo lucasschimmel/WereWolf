@@ -3,7 +3,14 @@ import * as T from "three";
 import type { Phase } from "../../shared/rules";
 import type { Member, Position } from "../rooms/model";
 import { useControls } from "../store";
-import { cabin, freePawn, pawn, village } from "./art";
+import {
+  batchScenery,
+  cabin,
+  freePawn,
+  pawn,
+  seatLantern,
+  village,
+} from "./art";
 
 type Pose = { x: number; z: number; yaw: number };
 type Props = {
@@ -39,6 +46,8 @@ export default function Village(props: Props) {
   const [unavailable, setUnavailable] = useState(false);
   const sensitivity = useControls((state) => state.sensitivity);
   const setSensitivity = useControls((state) => state.setSensitivity);
+  const reducedMotion = useControls((state) => state.reducedMotion);
+  const setReducedMotion = useControls((state) => state.setReducedMotion);
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -70,6 +79,9 @@ export default function Village(props: Props) {
     camera.rotation.order = "YXZ";
     village(scene);
     cabin(scene);
+    batchScenery(scene);
+    const lanterns = Array.from({ length: 15 }, () => seatLantern());
+    for (const { stand } of lanterns) scene.add(stand);
     const pawns = new Map<string, { mesh: T.Group; variant: string }>();
     const pressed = new Set<string>();
     const drag = { id: -1, x: 0, y: 0, travel: 0 };
@@ -225,6 +237,13 @@ export default function Village(props: Props) {
       }
       ambient.intensity = night ? 0.48 : 2.55;
       sun.intensity = night ? 0 : 2.1;
+      for (const [seat, { stand, flame }] of lanterns.entries()) {
+        const member = members[seat];
+        const position = spawn(seat, members.length);
+        stand.position.set(position.x * 0.82, 0, position.z * 0.82);
+        stand.visible = !!member && !night;
+        flame.visible = member?.alive ?? false;
+      }
       for (const [id, value] of pawns)
         if (!members.some((member) => member.id === id)) {
           scene.remove(value.mesh);
@@ -251,7 +270,9 @@ export default function Village(props: Props) {
           pawns.set(member.id, existing);
         }
         existing.mesh.visible = !night && member.alive;
-        const alpha = 1 - Math.exp(-delta * 12);
+        const alpha = useControls.getState().reducedMotion
+          ? 1
+          : 1 - Math.exp(-delta * 12);
         existing.mesh.position.x = T.MathUtils.lerp(
           existing.mesh.position.x,
           location.x,
@@ -272,8 +293,10 @@ export default function Village(props: Props) {
       window.removeEventListener("keydown", input);
       window.removeEventListener("keyup", input);
       scene.traverse((item) => {
+        if (item instanceof T.InstancedMesh) item.dispose();
         if (item instanceof T.Mesh) item.geometry.dispose();
       });
+      for (const { flame } of lanterns) flame.material.dispose();
       for (const value of pawns.values()) freePawn(value.mesh);
       renderer.dispose();
       canvas.remove();
@@ -299,6 +322,14 @@ export default function Village(props: Props) {
               value={sensitivity}
               onChange={(event) => setSensitivity(Number(event.target.value))}
             />
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={reducedMotion}
+              onChange={(event) => setReducedMotion(event.target.checked)}
+            />
+            Mouvement réduit
           </label>
         </details>
       )}
