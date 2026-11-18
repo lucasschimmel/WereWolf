@@ -1,0 +1,16 @@
+{
+  "files": {
+    "includes": [
+      "**",
+      "!**/_generated",
+      "!**/routeTree.gen.ts",
+      "!**/bun.lock",
+      "!GDD.md",
+      "!**/dist",
+      "!**/.tanstack",
+      "!**/.codex"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2 },
+  "linter": { "enabled": true, "rules": { "preset": "recommended" } }
+}

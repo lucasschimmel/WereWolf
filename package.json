@@ -1,0 +1,16 @@
+{
+  "name": "werewolf",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "cd apps/game && vite --host 0.0.0.0",
+    "build": "cd apps/game && vite build",
+    "check": "biome check . && tsc --noEmit -p apps/game/tsconfig.json",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2"
+  }
+}
