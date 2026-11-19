@@ -14,3 +14,4 @@ test-results/
 .dev.vars
 .wrangler/
 apps/relay/worker-configuration.d.ts
+.playwright/
