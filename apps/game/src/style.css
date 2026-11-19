@@ -733,9 +733,10 @@ input[type="checkbox"] {
   --s: 0.34;
 }
 
-/* Illustrated faces: the artwork already carries frame, text and glow. */
+/* Illustrated faces use the artwork's 2:3 aspect ratio. */
 .tcg-photo {
   width: 15em;
+  height: 22.5em;
   padding: 0;
   border-radius: 1em;
   background: transparent;
@@ -986,6 +987,8 @@ button.tcg:hover {
 
 .reveal-card {
   --s: 1.2;
+  /* Never taller than the screen minus the kicker and the hint. */
+  font-size: min(calc(16px * var(--s)), calc((100dvh - 190px) / 26.25));
   filter: drop-shadow(0 24px 40px rgba(0, 0, 0, 0.6));
   animation: flip 0.7s ease both;
 }
