@@ -19,8 +19,9 @@ export const view = query({
     const deaths = new Set(
       match?.events.flatMap((event) => event.deaths ?? []),
     );
-    const members = players.map(({ _id, name, character, ready }) => ({
+    const members = players.map(({ _id, name, character, ready, seen }) => ({
       id: _id,
+      seen: seen ?? 0,
       name,
       character,
       ready,
@@ -293,6 +294,15 @@ export const ticket = mutation({
         secret,
       ),
     };
+  },
+});
+
+/** Presence heartbeat: clients ping while the room is open. */
+export const beat = mutation({
+  args: credentials,
+  handler: async (ctx, { code, key }) => {
+    const { player } = await access(ctx, code, key);
+    await ctx.db.patch(player._id, { seen: Date.now() });
   },
 });
 

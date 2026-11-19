@@ -25,6 +25,8 @@ export default defineSchema({
     name: v.string(),
     character: v.number(),
     ready: v.boolean(),
+    /** Last heartbeat (epoch ms); drives the presence toasts. */
+    seen: v.optional(v.number()),
   })
     .index("by_room", ["room"])
     .index("by_seat", ["room", "key"]),

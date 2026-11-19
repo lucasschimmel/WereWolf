@@ -33,6 +33,7 @@ import { Lobby } from "./Lobby";
 import type { MatchView } from "./model";
 import { EndScreen, Vision, WitchTurn } from "./Overlays";
 import { RotatePrompt, TargetPicker } from "./Picker";
+import { usePresence } from "./presence";
 
 const Village = lazy(() => import("../scene/Village"));
 type Panel = "roster" | "journal" | "settings" | null;
@@ -148,7 +149,8 @@ function RoomContent({
   credentials: Credentials;
   back: (forget: boolean) => void;
 }) {
-  const room = useQuery(api.game.view, credentials);
+  const raw = useQuery(api.game.view, credentials);
+  const beat = useMutation(api.game.beat);
   const motion = useMotion(credentials);
   const choose = useMutation(api.game.choose);
   const pause = useMutation(api.game.pause);
@@ -164,7 +166,6 @@ function RoomContent({
   const intelSeen = useRef(-1);
   const now = useNow();
   const coarse = useCoarse();
-  const match = room?.match ?? null;
 
   const notify = useCallback((text: string, tone: Toast["tone"] = "info") => {
     const id = ++toastId.current;
@@ -174,6 +175,34 @@ function RoomContent({
       3600,
     );
   }, []);
+  const offline = usePresence(raw, now, notify);
+  // Disconnected players vanish from the village (and their card with them).
+  const room = useMemo(
+    () =>
+      raw && offline.size > 0
+        ? {
+            ...raw,
+            members: raw.members.filter((member) => !offline.has(member.id)),
+          }
+        : raw,
+    [raw, offline],
+  );
+  const match = room?.match ?? null;
+
+  const { code, key } = credentials;
+  useEffect(() => {
+    const ping = () => {
+      if (document.visibilityState === "visible")
+        beat({ code, key }).catch(() => undefined);
+    };
+    ping();
+    const timer = window.setInterval(ping, 10_000);
+    document.addEventListener("visibilitychange", ping);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", ping);
+    };
+  }, [beat, code, key]);
   const act = useCallback(
     async (operation: () => Promise<unknown>) => {
       try {
@@ -547,7 +576,7 @@ function RoomContent({
                 ? [...match.events, ...match.audit]
                 : match.events
             }
-            members={room.members}
+            members={raw?.members ?? room.members}
             settings={room.settings}
             audit={ended}
           />
