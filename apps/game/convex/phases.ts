@@ -1,15 +1,28 @@
 import { v } from "convex/values";
-import { isNight, type Phase, plurality, secondsFor } from "../shared/rules";
+import {
+  earlyEndAt,
+  graceSeconds,
+  hiddenFloorSeconds,
+  isNight,
+  maskedSeconds,
+  type Phase,
+  revealsOnDeath,
+  secondsFor,
+  turnSeconds,
+} from "../shared/rules";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import {
+  advanceDayBallot,
+  advanceNight,
+  beginDebate,
   finishDeaths,
-  firstWindow,
-  hasHunter,
-  kill,
+  finishElection,
+  holderAlive,
+  isTurnComplete,
+  type Match,
   nextNight,
-  resolvePotions,
 } from "./engine";
 
 export async function schedule(
@@ -38,51 +51,27 @@ export const advance = internalMutation({
         next = nextNight(match);
         break;
       case "night":
-        firstWindow(match);
-        next = "potions";
-        break;
       case "potions":
-        resolvePotions(match);
-        next = "dawn";
-        if (hasHunter(match)) next = "nightShot";
-        else finishDeaths(match, "À l’aube");
-        break;
-      case "nightShot":
-        finishDeaths(match, "À l’aube");
-        next = "dawn";
+        next = advanceNight(match);
         break;
       case "dawn":
-        next = "debate";
+        next = match.hunter ? "dawnShot" : beginDebate(match);
+        break;
+      case "dawnShot":
+        finishDeaths(match, "Riposte du Chasseur");
+        next = match.outcome ? "ended" : beginDebate(match);
+        break;
+      case "mayorElection":
+        next = finishElection(match);
         break;
       case "debate":
         next = "vote";
         break;
       case "vote":
-      case "runoff": {
-        const leaders = plurality(match.votes);
-        match.events.push({
-          cycle: match.cycle,
-          label: match.phase === "vote" ? "Vote du village" : "Départage",
-          votes: match.votes,
-        });
-        match.votes = {};
-        if (match.phase === "vote" && leaders.length > 1) {
-          match.runoff = leaders;
-          next = "runoff";
-          break;
-        }
-        if (leaders.length === 1) {
-          kill(match, leaders);
-          if (match.seats[leaders[0]].role === "jester") match.outcome = "solo";
-        }
-        if (match.hunter) {
-          next = "dayShot";
-          break;
-        }
-        finishDeaths(match, "Verdict");
-        next = match.outcome ? "ended" : nextNight(match);
+      case "runoff":
+      case "mayorVerdict":
+        next = advanceDayBallot(match);
         break;
-      }
       case "dayShot":
         finishDeaths(match, "Verdict");
         next = match.outcome ? "ended" : nextNight(match);
@@ -91,14 +80,10 @@ export const advance = internalMutation({
         return;
     }
     match.phase = match.outcome ? "ended" : next;
-    match.end =
-      Date.now() +
-      secondsFor(
-        match.phase,
-        Object.keys(match.seats).length,
-        match.settings.mode,
-      ) *
-        1000;
+    if (!isNight(match.phase)) match.turn = undefined;
+    match.started = Date.now();
+    match.done = undefined;
+    match.end = match.started + durationOf(match) * 1000;
     match.revision += 1;
     await ctx.db.replace(_id, match);
     if (match.phase !== "ended")
@@ -106,9 +91,74 @@ export const advance = internalMutation({
   },
 });
 
+/**
+ * Seconds allotted to the match's current phase or night turn. In hidden
+ * modes a dead holder's slot is a short masked window picked at random.
+ */
+export function durationOf(match: Match, random: () => number = Math.random) {
+  if (isNight(match.phase) && match.turn) {
+    const masked =
+      !revealsOnDeath(match.settings) && !holderAlive(match, match.turn);
+    return masked ? maskedSeconds(random) : turnSeconds(match.turn);
+  }
+  return secondsFor(
+    match.phase,
+    Object.keys(match.seats).length,
+    match.settings.mode,
+  );
+}
+
+const earlyPhases: ReadonlySet<Phase> = new Set([
+  "night",
+  "potions",
+  "dawnShot",
+  "mayorElection",
+  "vote",
+  "runoff",
+  "mayorVerdict",
+  "dayShot",
+]);
+
+/**
+ * Ends the current slot after a short grace once its actors are done. Any
+ * later change re-runs this: the end is moved, the revision bumped (so the
+ * previously scheduled `advance` becomes a no-op) and a new one scheduled.
+ * Paused matches (`remaining`) are left alone.
+ */
+export async function settleEarly(ctx: MutationCtx, id: Id<"matches">) {
+  const match = await ctx.db.get(id);
+  if (
+    !match ||
+    match.remaining !== undefined ||
+    match.started === undefined ||
+    !earlyPhases.has(match.phase) ||
+    !isTurnComplete(match)
+  )
+    return;
+  const end = earlyEndAt({
+    now: Date.now(),
+    started: match.started,
+    deadline: match.started + durationOf(match) * 1000,
+    graceSeconds: graceSeconds(isNight(match.phase) ? match.turn : undefined),
+    floorSeconds:
+      isNight(match.phase) && !revealsOnDeath(match.settings)
+        ? hiddenFloorSeconds
+        : 0,
+  });
+  if (end === match.end) return;
+  const revision = match.revision + 1;
+  await ctx.db.patch(id, { end, revision });
+  await schedule(ctx, id, revision, end);
+}
+
+/**
+ * Night sub-phases are reported as a single public `night` phase. The turn is
+ * public; its length is not fixed (see `settleEarly` and `durationOf`).
+ */
 export function publicTiming(match: Doc<"matches">) {
-  if (!isNight(match.phase)) return { phase: match.phase, end: match.end };
-  const shotTime = hasHunter(match) && match.phase !== "nightShot" ? 15_000 : 0;
-  const potionTime = match.phase === "night" ? 25_000 : 0;
-  return { phase: "night" as const, end: match.end + shotTime + potionTime };
+  return {
+    phase: isNight(match.phase) ? ("night" as const) : match.phase,
+    end: match.end,
+    turn: match.turn,
+  };
 }

@@ -37,7 +37,8 @@ export function dampAngle(
   rate: number,
   delta: number,
 ) {
-  return current + wrap(target - current) * (1 - Math.exp(-rate * delta));
+  // Wrapped, so a yaw never grows unbounded after a few turns.
+  return wrap(current + wrap(target - current) * (1 - Math.exp(-rate * delta)));
 }
 
 export function clampToPlaza(x: number, z: number) {

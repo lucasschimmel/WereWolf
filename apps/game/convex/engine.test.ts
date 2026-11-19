@@ -1,13 +1,25 @@
-import { expect, test } from "bun:test";
-import { defaultSettings } from "../shared/rules";
+import { describe, expect, test } from "bun:test";
+import { defaultSettings, maskedRange, turnSeconds } from "../shared/rules";
 import type { Id } from "./_generated/dataModel";
 import {
+  advanceDayBallot,
+  advanceNight,
+  beginDebate,
+  dayAbility,
   finishDeaths,
+  finishElection,
   firstWindow,
+  inspect,
+  isTurnComplete,
+  kill,
   type Match,
+  nextNight,
   nightAbility,
+  nightOrder,
   resolvePotions,
+  turnAbility,
 } from "./engine";
+import { durationOf } from "./phases";
 
 function scenario(): Match {
   const seat = (role: Match["seats"][string]["role"]) => ({
@@ -22,6 +34,7 @@ function scenario(): Match {
   return {
     room: "fixture" as Id<"rooms">,
     phase: "night",
+    turn: "pack",
     revision: 1,
     cycle: 1,
     end: 0,
@@ -49,6 +62,103 @@ function scenario(): Match {
     pauses: 2,
   };
 }
+
+test("only the Little Girl learns about a wolf vote when a tied attack fails", () => {
+  const match = scenario();
+  match.seats.villager.role = "littleGirl";
+  match.night = { wolf: "seer", lone: "hunter" };
+  match.phase = advanceNight(match);
+  expect(turnAbility(match, "villager")).toEqual({
+    action: "peek",
+    targets: ["wolf", "lone", "guard", "hunter", "seer", "witch"],
+  });
+
+  inspect(match, "villager", "seer");
+  firstWindow(match);
+
+  expect(match.attack).toBe("");
+  expect(match.seats.villager.intel).toEqual(["1|seer|packVoted"]);
+  expect(match.seats.seer.intel).toEqual([]);
+});
+
+test("the Little Girl ignores non-wolf actions targeting the observed player", () => {
+  const match = scenario();
+  match.seats.villager.role = "littleGirl";
+  match.night = { wolf: "hunter", lone: "", guard: "seer" };
+
+  inspect(match, "villager", "seer");
+
+  expect(match.seats.villager.intel).toEqual(["1|seer|packDidNotVote"]);
+});
+
+test("living players elect a public mayor and replace them after their death", () => {
+  const match = scenario();
+  match.phase = beginDebate(match);
+  expect(match.phase).toBe("mayorElection");
+  match.votes = { seer: "seer", villager: "witch" };
+
+  expect(finishElection(match, () => 0)).toBe("debate");
+  expect(match.mayor).toBe("seer");
+  expect(match.events[0].mayor).toBe("seer");
+  expect(match.votes).toEqual({});
+  expect(beginDebate(match)).toBe("debate");
+  kill(match, ["seer"]);
+  expect(beginDebate(match)).toBe("mayorElection");
+});
+
+test("only the mayor gets a verdict after a second tied ballot", () => {
+  const match = scenario();
+  match.phase = "vote";
+  match.mayor = "seer";
+  match.votes = { wolf: "hunter", lone: "wolf", witch: "guard" };
+
+  match.phase = advanceDayBallot(match);
+  expect(match.phase).toBe("runoff");
+  expect(dayAbility(match, "seer")?.action).toBe("vote");
+  match.votes = { wolf: "hunter", lone: "wolf" };
+  match.phase = advanceDayBallot(match);
+
+  expect(match.phase).toBe("mayorVerdict");
+  expect(dayAbility(match, "seer")).toEqual({
+    action: "decideTie",
+    targets: ["hunter", "wolf"],
+  });
+  expect(dayAbility(match, "lone")).toBeUndefined();
+});
+
+test("the mayor's verdict triggers the hunter's retaliation", () => {
+  const match = scenario();
+  match.phase = "mayorVerdict";
+  match.mayor = "seer";
+  match.runoff = ["hunter", "wolf"];
+  match.votes = { seer: "hunter" };
+
+  expect(advanceDayBallot(match)).toBe("dayShot");
+  expect(match.hunter).toBe("hunter");
+  expect(match.seats.hunter.alive).toBe(false);
+});
+
+test("a mayor can pass and let the day end without a death", () => {
+  const match = scenario();
+  match.phase = "mayorVerdict";
+  match.mayor = "seer";
+  match.runoff = ["hunter", "wolf"];
+  match.votes = { seer: "" };
+
+  expect(advanceDayBallot(match)).toBe("night");
+  expect(match.events.at(-1)?.deaths).toEqual([]);
+});
+
+test("a conclusive runoff eliminates its winner without asking the mayor", () => {
+  const match = scenario();
+  match.phase = "runoff";
+  match.mayor = "seer";
+  match.runoff = ["villager", "wolf"];
+  match.votes = { seer: "wolf", guard: "wolf", wolf: "villager" };
+
+  expect(advanceDayBallot(match)).toBe("night");
+  expect(match.events.at(-1)?.deaths).toEqual(["wolf"]);
+});
 test("protection blocks the pack attack and locks the previous target", () => {
   const match = scenario();
   match.night = { wolf: "seer", guard: "seer" };
@@ -105,4 +215,236 @@ test("the custom observer detects a submitted action despite a tied attack", () 
   firstWindow(match);
   expect(match.seats.seer.intel).toEqual(["1|wolf|active"]);
   expect(nightAbility(match, "seer")).toBeUndefined();
+});
+
+describe("turn-by-turn nights", () => {
+  /** Plays every remaining slot of the night and returns the phases seen. */
+  function playNight(match: Match) {
+    const slots = [`${match.phase}:${match.turn}`];
+    while (match.phase !== "dawn") {
+      match.phase = advanceNight(match);
+      slots.push(`${match.phase}:${match.turn ?? ""}`);
+    }
+    return slots;
+  }
+
+  test("runs every living role's slot in order, then the witch", () => {
+    const match = scenario();
+    match.phase = "intro";
+    match.phase = nextNight(match);
+    expect(playNight(match)).toEqual([
+      "night:pack",
+      "night:seer",
+      "night:guard",
+      "potions:witch",
+      "dawn:",
+    ]);
+  });
+
+  test("skips the slots of dead holders when roles are revealed on death", () => {
+    const match = scenario();
+    match.seats.seer.alive = false;
+    match.seats.witch.alive = false;
+    expect(playNight(match)).toEqual(["night:pack", "night:guard", "dawn:"]);
+  });
+
+  test("keeps the slots of dead holders in a hidden mode", () => {
+    const match = scenario();
+    match.settings = { ...defaultSettings, mode: "mystery" };
+    match.seats.seer.alive = false;
+    match.seats.witch.alive = false;
+    expect(playNight(match)).toEqual([
+      "night:pack",
+      "night:seer",
+      "night:guard",
+      "potions:witch",
+      "dawn:",
+    ]);
+  });
+
+  test("a Workshop without reveal keeps slots, with reveal it skips them", () => {
+    const hidden = scenario();
+    hidden.settings = { ...defaultSettings, mode: "workshop", reveal: false };
+    hidden.seats.seer.alive = false;
+    const shown = scenario();
+    shown.settings = { ...defaultSettings, mode: "workshop", reveal: true };
+    shown.seats.seer.alive = false;
+    expect(nightOrder(hidden)).toContain("seer");
+    expect(nightOrder(shown)).not.toContain("seer");
+  });
+
+  test("a dead holder's slot is a short masked window in hidden modes only", () => {
+    const match = scenario();
+    match.settings = { ...defaultSettings, mode: "mystery" };
+    match.seats.seer.alive = false;
+    match.phase = "night";
+    match.turn = "seer";
+    expect(durationOf(match, () => 0)).toBe(maskedRange.min);
+    expect(durationOf(match, () => 0.999)).toBe(maskedRange.max);
+    match.turn = "guard";
+    expect(durationOf(match)).toBe(turnSeconds("guard"));
+    match.settings = defaultSettings;
+    match.turn = "seer";
+    expect(durationOf(match)).toBe(turnSeconds("seer"));
+  });
+
+  test("a hunter killed at night gets no night slot of his own", () => {
+    const match = scenario();
+    match.night = { wolf: "hunter", lone: "hunter" };
+    expect(playNight(match)).toEqual([
+      "night:pack",
+      "night:seer",
+      "night:guard",
+      "potions:witch",
+      "dawn:",
+    ]);
+  });
+
+  test("a hunter killed at night is announced at dawn and keeps his shot pending", () => {
+    const match = scenario();
+    match.night = { wolf: "hunter", lone: "hunter" };
+    playNight(match);
+    expect(match.events.at(-1)?.deaths).toEqual(["hunter"]);
+    expect(match.hunter).toBe("hunter");
+  });
+
+  test("the dawn shot adds its victim in a separate announcement", () => {
+    const match = scenario();
+    match.night = { wolf: "hunter", lone: "hunter" };
+    playNight(match);
+    match.shot = "wolf";
+    finishDeaths(match, "Riposte du Chasseur");
+    expect(match.events.at(-1)?.deaths).toEqual(["wolf"]);
+    expect(match.hunter).toBe("");
+  });
+
+  test("without a hunter among the dead, the night is settled at dawn", () => {
+    const match = scenario();
+    match.night = { wolf: "seer", lone: "seer" };
+    playNight(match);
+    expect(match.hunter).toBe("");
+  });
+
+  test("the outcome waits for the dawn shot", () => {
+    const match = scenario();
+    match.seats.hunter.alive = false;
+    match.hunter = "hunter";
+    match.deaths = ["hunter"];
+    match.phase = "potions";
+    match.turn = "witch";
+    for (const id of ["wolf", "lone"]) match.seats[id].alive = false;
+    advanceNight(match);
+    expect(match.outcome).toBeUndefined();
+  });
+
+  test("skips the potion slot when no witch was dealt", () => {
+    const match = scenario();
+    match.seats.witch.role = "villager";
+    expect(playNight(match)).not.toContain("potions:witch");
+  });
+
+  test("only the current turn's holders can act", () => {
+    const match = scenario();
+    expect(turnAbility(match, "wolf")?.action).toBe("wolf");
+    expect(turnAbility(match, "seer")).toBeUndefined();
+    match.turn = "seer";
+    expect(turnAbility(match, "seer")?.action).toBe("inspect");
+    expect(turnAbility(match, "wolf")).toBeUndefined();
+  });
+
+  test("the seer learns the target's camp during her own turn", () => {
+    const match = scenario();
+    match.turn = "seer";
+    inspect(match, "seer", "lone");
+    expect(match.seats.seer.intel).toEqual(["1|lone|pack"]);
+  });
+
+  test("the pack's choice reaches the witch after the guard's protection", () => {
+    const match = scenario();
+    match.night = { wolf: "villager", lone: "villager" };
+    match.phase = advanceNight(match);
+    match.phase = advanceNight(match);
+    match.night.guard = "villager";
+    match.phase = advanceNight(match);
+    expect(match.phase).toBe("potions");
+    expect(match.attack).toBe("");
+  });
+});
+
+describe("early advance completion", () => {
+  test("the pack is done once every living wolf has a ballot or abstained", () => {
+    const match = scenario();
+    match.night = { wolf: "villager" };
+    expect(isTurnComplete(match)).toBe(false);
+    match.night.lone = "";
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("a dead wolf is not waited for", () => {
+    const match = scenario();
+    match.seats.lone.alive = false;
+    match.night = { wolf: "villager" };
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("the seer is done after her immutable vision, even a pass", () => {
+    const match = scenario();
+    match.turn = "seer";
+    expect(isTurnComplete(match)).toBe(false);
+    inspect(match, "seer", "");
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("the guard is done once she chose or passed", () => {
+    const match = scenario();
+    match.turn = "guard";
+    expect(isTurnComplete(match)).toBe(false);
+    match.night.guard = "villager";
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("a dead holder never completes its own slot", () => {
+    const match = scenario();
+    match.turn = "seer";
+    match.seats.seer.alive = false;
+    expect(isTurnComplete(match)).toBe(false);
+  });
+
+  test("the witch needs an explicit confirmation", () => {
+    const match = scenario();
+    match.phase = "potions";
+    match.turn = "witch";
+    match.heal = true;
+    expect(isTurnComplete(match)).toBe(false);
+    match.done = true;
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("the hunter is done once he shot or passed", () => {
+    const match = scenario();
+    match.phase = "dayShot";
+    match.hunter = "hunter";
+    expect(isTurnComplete(match)).toBe(false);
+    match.done = true;
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("a vote is done when every living voter has a ballot, abstaining included", () => {
+    const match = scenario();
+    match.phase = "vote";
+    match.seats.villager.alive = false;
+    match.votes = { wolf: "seer", lone: "", guard: "wolf", hunter: "wolf" };
+    expect(isTurnComplete(match)).toBe(false);
+    match.votes.seer = "wolf";
+    match.votes.witch = "wolf";
+    expect(isTurnComplete(match)).toBe(true);
+  });
+
+  test("debate, dawn and intro never complete early", () => {
+    const match = scenario();
+    for (const phase of ["debate", "dawn", "intro"] as const) {
+      match.phase = phase;
+      expect(isTurnComplete(match)).toBe(false);
+    }
+  });
 });

@@ -5,7 +5,6 @@ import {
   characters,
   type Settings,
 } from "../../shared/rules";
-import { Emblem } from "../ui/cards";
 import type { MatchView, Member, View } from "./model";
 
 export function Roster({
@@ -46,12 +45,18 @@ export function Roster({
                   </>
                 )}
                 {playing ? (member.alive ? "En vie" : "Éliminé·e") : look.name}
+                {room.match?.mayor === member.id && (
+                  <b>
+                    {" "}
+                    · <Crown size={11} /> Maire
+                  </b>
+                )}
                 {mate && <b className="mate"> · Meute</b>}
               </small>
             </span>
-            {card && member.role ? (
+            {card ? (
               <span className={`roster-role camp-${card.camp}`}>
-                <Emblem role={member.role} size={14} /> {card.name}
+                {card.name}
               </span>
             ) : !playing ? (
               <span className={`ready-chip${member.ready ? " on" : ""}`}>
@@ -145,6 +150,7 @@ export function Journal({
         <li key={key}>
           <span className="journal-cycle">Tour {event.cycle}</span>
           <strong>{event.label}</strong>
+          {event.mayor && <p>{name(event.mayor)} est élu·e.</p>}
           {event.deaths &&
             (event.deaths.length ? (
               <ul className="deaths">

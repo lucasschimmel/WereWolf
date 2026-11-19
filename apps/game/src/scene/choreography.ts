@@ -8,9 +8,12 @@ export type View = "village" | "interior";
 
 export const seatPhases = new Set<Phase>([
   "dawn",
+  "mayorElection",
   "vote",
   "runoff",
+  "mayorVerdict",
   "dayShot",
+  "dawnShot",
   "ended",
   "night",
 ]);
@@ -219,10 +222,13 @@ export function transition(
         { to: cue.pose, duration: 1.8 },
       ];
     case "vote":
+    case "mayorElection":
       cue.ring();
       return [{ to: cue.pose, duration: 2, arc: 3 }];
     case "runoff":
+    case "mayorVerdict":
     case "dayShot":
+    case "dawnShot":
       return [...verdict, { to: cue.pose, duration: 1.5 }];
     case "ended":
       return [...verdict, { to: cue.pose, duration: 3, arc: 4 }];

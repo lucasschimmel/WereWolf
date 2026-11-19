@@ -151,6 +151,10 @@ export class Cast {
       selected?: string;
       pointing: boolean;
       outcome?: Outcome;
+      /** Players shown awake on the square during a night turn (the pack). */
+      awake: string[];
+      /** Live aims of other awake players, by player id. */
+      aims: Record<string, string>;
     },
   ) {
     for (const wanderer of this.wanderers) this.wander(wanderer, delta, time);
@@ -176,12 +180,24 @@ export class Cast {
               camp: member.camp,
             },
       );
-      puppet.gesture =
-        phase === "ended" && winner && member.camp
+      const asleep =
+        phase === "night" &&
+        member.id !== me &&
+        !context.awake.includes(member.id);
+      puppet.setGhost(asleep);
+      const aim =
+        member.id === me
+          ? context.pointing
+            ? target
+            : undefined
+          : this.puppets.get(context.aims[member.id] ?? "");
+      puppet.gesture = asleep
+        ? "sleep"
+        : phase === "ended" && winner && member.camp
           ? member.camp === winner
             ? "cheer"
             : "mourn"
-          : member.id === me && context.pointing && target
+          : aim
             ? "point"
             : "none";
       if (view === "interior" || (!member.alive && !puppet.falling)) {
@@ -198,10 +214,7 @@ export class Cast {
         continue;
       }
       if (seated || !isFree(phase)) {
-        const look =
-          member.id === me && context.pointing && target?.root.visible
-            ? target.position
-            : undefined;
+        const look = aim?.root.visible ? aim.position : undefined;
         puppet.update(delta, time, seat(index, count), "walk", look);
       } else if (member.id === me) puppet.update(delta, time, self, "glide");
       else
@@ -209,7 +222,7 @@ export class Cast {
           delta,
           time,
           positions.get(member.id) ?? seat(index, count),
-          "glide",
+          "track",
         );
     }
   }

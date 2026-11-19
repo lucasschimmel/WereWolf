@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "werewolf-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "durable_objects": {
+    "bindings": [{ "name": "SQUARE", "class_name": "Square" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Square"] }],
+  "observability": { "enabled": true }
+  // Secrets: `wrangler secret put RELAY_SECRET` (same value as the Convex
+  // RELAY_SECRET env var). Optional var ALLOWED_ORIGINS, comma-separated.
+}

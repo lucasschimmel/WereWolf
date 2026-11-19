@@ -1,4 +1,15 @@
-import { cardFor, maxCycles, plurality, victory } from "../shared/rules";
+import {
+  cardFor,
+  isDayBallot,
+  maxCycles,
+  type NightTurn,
+  nightTurns,
+  type Phase,
+  plurality,
+  revealsOnDeath,
+  turnOf,
+  victory,
+} from "../shared/rules";
 import type { Doc } from "./_generated/dataModel";
 
 export type Match = Omit<Doc<"matches">, "_id" | "_creationTime">;
@@ -7,8 +18,89 @@ export const alive = (match: Match) =>
   Object.keys(match.seats).filter((id) => match.seats[id].alive);
 export const camp = (match: Match, id: string) =>
   cardFor(match.seats[id].role, match.settings).camp;
-export const hasHunter = (match: Match) =>
-  Object.values(match.seats).some((seat) => seat.role === "hunter");
+const dealt = (match: Match, role: string) =>
+  Object.values(match.seats).some((seat) => seat.role === role);
+export const hasWitch = (match: Match) => dealt(match, "witch");
+export const deckTurns = (match: Match) =>
+  nightTurns(Object.values(match.seats).map((seat) => seat.role));
+
+/** Living seats whose card owns `turn`. */
+export function turnHolders(match: Match, turn: NightTurn) {
+  return alive(match).filter((id) => {
+    const role = match.seats[id].role;
+    return turnOf(role) === turn || role === turn;
+  });
+}
+export const holderAlive = (match: Match, turn: NightTurn) =>
+  turnHolders(match, turn).length > 0;
+
+/**
+ * The night slots that will actually run, in order: the dealt deck's action
+ * turns then the witch. Holders that are dead have their slot skipped when
+ * roles are revealed on death; hidden modes keep every dealt slot.
+ */
+export function nightOrder(match: Match): NightTurn[] {
+  const turns: NightTurn[] = [...deckTurns(match)];
+  if (hasWitch(match)) turns.push("witch");
+  if (!revealsOnDeath(match.settings)) return turns;
+  return turns.filter((turn) => holderAlive(match, turn));
+}
+
+/**
+ * Whether everyone who can act in the current slot has finished, so the slot
+ * may end after a short grace instead of waiting for its timer. Debate, intro
+ * and dawn are never complete.
+ */
+export function isTurnComplete(match: Match): boolean {
+  switch (match.phase) {
+    case "night": {
+      if (!match.turn) return false;
+      const holders = turnHolders(match, match.turn);
+      if (holders.length === 0) return false;
+      return holders.every((id) => {
+        if (!nightAbility(match, id)) return true;
+        // Wolves abstain with "" and the seer passes with "": both are keys.
+        return match.night[id] !== undefined;
+      });
+    }
+    case "potions":
+      return holderAlive(match, "witch") && match.done === true;
+    case "dawnShot":
+    case "dayShot":
+      return !!match.hunter && match.done === true;
+    case "vote":
+    case "mayorElection":
+    case "runoff": {
+      const living = alive(match);
+      return living.length > 0 && living.every((id) => id in match.votes);
+    }
+    case "mayorVerdict":
+      return !!match.mayor && match.mayor in match.votes;
+    default:
+      return false;
+  }
+}
+
+/** The night ability of `id`, only while its turn is the current one. */
+export function turnAbility(match: Match, id: string) {
+  if (match.phase !== "night" || turnOf(match.seats[id].role) !== match.turn)
+    return;
+  return nightAbility(match, id);
+}
+
+/** Records a private observation and reveals it to the observer at once. */
+export function inspect(match: Match, id: string, target: string) {
+  match.night[id] = target;
+  if (!target) return;
+  match.seats[id].spent = true;
+  const result =
+    match.seats[id].role === "littleGirl"
+      ? turnHolders(match, "pack").some((wolf) => match.night[wolf] === target)
+        ? "packVoted"
+        : "packDidNotVote"
+      : camp(match, target);
+  match.seats[id].intel.push(`${match.cycle}|${target}|${result}`);
+}
 
 export function nightAbility(match: Match, id: string) {
   const seat = match.seats[id];
@@ -21,6 +113,11 @@ export function nightAbility(match: Match, id: string) {
   if (seat.role === "seer")
     return {
       action: "inspect",
+      targets: alive(match).filter((other) => other !== id),
+    } as const;
+  if (seat.role === "littleGirl")
+    return {
+      action: "peek",
       targets: alive(match).filter((other) => other !== id),
     } as const;
   if (seat.role === "guard")
@@ -58,13 +155,9 @@ export function firstWindow(match: Match) {
     match.seats[id].spent = true;
     if (ability.action === "wolf") ballots[id] = target;
     if (ability.action === "protect") protectedIds.add(target);
-    if (ability.action === "activity" || ability.action === "inspect") {
-      const result =
-        ability.action === "activity"
-          ? match.night[target]
-            ? "active"
-            : "idle"
-          : camp(match, target);
+    // Inspections are revealed during their own turn by `inspect`.
+    if (ability.action === "activity") {
+      const result = match.night[target] ? "active" : "idle";
       match.seats[id].intel.push(`${match.cycle}|${target}|${result}`);
     }
   }
@@ -73,9 +166,34 @@ export function firstWindow(match: Match) {
     targets.length === 1 && !protectedIds.has(targets[0]) ? targets[0] : skip;
   match.audit.push({
     cycle: match.cycle,
-    label: "Actions de la première fenêtre",
+    label: "Actions de la nuit",
     votes: { ...match.night },
   });
+}
+
+/**
+ * Closes the current night slot and returns the next phase. Action turns run
+ * in `nightOrder`, then the witch (`potions`). The night's deaths are announced
+ * at dawn; if a hunter is among them, his shot (`dawnShot`) follows the dawn.
+ */
+export function advanceNight(match: Match): Phase {
+  if (match.phase === "night" || match.phase === "potions") {
+    const order = nightOrder(match);
+    const next = order[order.indexOf(match.turn ?? "pack") + 1];
+    if (match.phase === "night" && next && next !== "witch") {
+      match.turn = next;
+      return "night";
+    }
+    if (match.phase === "night") firstWindow(match);
+    if (match.phase === "night" && next === "witch") {
+      match.turn = "witch";
+      return "potions";
+    }
+    resolvePotions(match);
+  }
+  announceDeaths(match, "À l’aube");
+  match.turn = undefined;
+  return "dawn";
 }
 export function kill(match: Match, targets: string[]) {
   for (const id of new Set(targets)) {
@@ -101,6 +219,15 @@ export function resolvePotions(match: Match) {
   });
   kill(match, [match.heal ? skip : match.attack, match.poison]);
 }
+/**
+ * Publishes the pending deaths. When a hunter is among them his shot is still
+ * to come, so `match.hunter` is kept and the outcome is left to `finishDeaths`.
+ */
+export function announceDeaths(match: Match, label: string) {
+  if (!match.hunter) return finishDeaths(match, label);
+  match.events.push({ cycle: match.cycle, label, deaths: [...match.deaths] });
+  match.deaths = [];
+}
 export function finishDeaths(match: Match, label: string) {
   if (match.shot)
     match.audit.push({
@@ -115,6 +242,95 @@ export function finishDeaths(match: Match, label: string) {
   match.shot = skip;
   match.outcome ??= victory(alive(match).map((id) => camp(match, id)));
 }
+
+export function livingMayor(match: Match) {
+  return match.mayor && match.seats[match.mayor]?.alive
+    ? match.mayor
+    : undefined;
+}
+
+export function dayAbility(match: Match, id: string) {
+  if (!match.seats[id]?.alive) return;
+  if (match.phase === "mayorVerdict") {
+    if (livingMayor(match) === id)
+      return {
+        action: "decideTie",
+        targets: match.runoff.filter((target) => match.seats[target]?.alive),
+      } as const;
+    return;
+  }
+  if (!isDayBallot(match.phase)) return;
+  if (match.phase === "mayorElection")
+    return { action: "electMayor", targets: alive(match) } as const;
+  const candidates = match.phase === "runoff" ? match.runoff : alive(match);
+  return {
+    action: "vote",
+    targets: candidates.filter((target) => target !== id),
+  } as const;
+}
+
+export function beginDebate(match: Match): Phase {
+  if (livingMayor(match)) return "debate";
+  match.mayor = undefined;
+  return "mayorElection";
+}
+
+export function finishElection(match: Match, random = Math.random): Phase {
+  const leaders = plurality(match.votes);
+  const mayor = leaders[Math.floor(random() * leaders.length)];
+  match.mayor = mayor;
+  match.events.push({
+    cycle: match.cycle,
+    label: "Élection du Maire",
+    ...(mayor ? { mayor } : {}),
+    votes: match.votes,
+  });
+  match.votes = {};
+  return "debate";
+}
+
+function finishVerdict(match: Match, target?: string): Phase {
+  if (target) {
+    kill(match, [target]);
+    if (match.seats[target].role === "jester") match.outcome = "solo";
+  }
+  if (match.hunter) return "dayShot";
+  finishDeaths(match, "Verdict");
+  return match.outcome ? "ended" : nextNight(match);
+}
+
+export function advanceDayBallot(match: Match): Phase {
+  if (match.phase === "mayorVerdict") {
+    const mayor = livingMayor(match);
+    const target = mayor ? match.votes[mayor] : undefined;
+    const validTarget =
+      mayor && target && dayAbility(match, mayor)?.targets.includes(target)
+        ? target
+        : undefined;
+    match.events.push({
+      cycle: match.cycle,
+      label: "Décision du Maire",
+      votes: match.votes,
+    });
+    match.votes = {};
+    return finishVerdict(match, validTarget);
+  }
+
+  const leaders = plurality(match.votes);
+  match.events.push({
+    cycle: match.cycle,
+    label: match.phase === "vote" ? "Vote du village" : "Départage",
+    votes: match.votes,
+  });
+  match.votes = {};
+  if (leaders.length > 1) {
+    match.runoff = leaders;
+    if (match.phase === "vote") return "runoff";
+    if (livingMayor(match)) return "mayorVerdict";
+  }
+  return finishVerdict(match, leaders.length === 1 ? leaders[0] : undefined);
+}
+
 export function nextNight(match: Match) {
   if (match.cycle >= maxCycles) {
     match.outcome ??= "draw";
@@ -127,5 +343,7 @@ export function nextNight(match: Match) {
   match.attack = skip;
   match.heal = false;
   match.poison = skip;
+  // The pack always acts first and is alive while the match runs.
+  match.turn = nightOrder(match)[0];
   return "night";
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@werewolf/relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787 --ip 0.0.0.0",
+    "deploy": "wrangler deploy",
+    "typecheck": "wrangler types && tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9",
+    "wrangler": "^4"
+  }
+}

@@ -38,6 +38,11 @@ export const cards = {
     camp: "village",
     text: "Découvre le camp d’un autre vivant chaque nuit.",
   },
+  littleGirl: {
+    name: "Petite Fille",
+    camp: "village",
+    text: "Chaque nuit, découvre si au moins un loup a voté contre un autre vivant de ton choix.",
+  },
   guard: {
     name: "Veilleur",
     camp: "village",
@@ -110,8 +115,7 @@ export function cardFor(role: Role, settings: Settings) {
   const effects = {
     camp: "découvre son camp",
     protect: "protège la cible de la meute",
-    activity:
-      "découvre si la cible a agi pendant la première fenêtre de la nuit",
+    activity: "découvre si la cible a agi cette nuit, hors potions et ripostes",
   };
   const repeat = card.avoidRepeat
     ? " Change de cible chaque nuit consécutive."
@@ -133,6 +137,7 @@ export function deckFor(count: number, settings: Settings): Role[] {
   const deck: Role[] = Array.from({ length: wolves }, () => "wolf");
   deck.push("seer", count < 10 ? "guard" : "witch");
   if (count >= 9) deck.push("hunter");
+  if (count === 10 || count === 11) deck.push("littleGirl");
   if (settings.mode === "chaos") deck.push("jester");
   while (deck.length < count) deck.push("villager");
   if (settings.mode !== "workshop") return deck;
@@ -171,8 +176,11 @@ export function deckFor(count: number, settings: Settings): Role[] {
   const inspection = settings.custom.filter(
     (card) => card.effect !== "protect" && card.uses === "repeat",
   ).length;
-  if (deck.filter((role) => role === "villager").length < 2)
-    throw new Error("Garde au moins deux Villageois simples.");
+  if (
+    deck.filter((role) => role === "villager" || role === "littleGirl").length <
+    2
+  )
+    throw new Error("Garde au moins deux cartes Villageois ou Petite Fille.");
   if (protection + Number(deck.includes("guard") || deck.includes("witch")) > 1)
     throw new Error(
       "Le paquet accepte une seule carte de protection ou de soin.",
@@ -185,11 +193,13 @@ export type Phase =
   | "intro"
   | "night"
   | "potions"
-  | "nightShot"
   | "dawn"
+  | "dawnShot"
+  | "mayorElection"
   | "debate"
   | "vote"
   | "runoff"
+  | "mayorVerdict"
   | "dayShot"
   | "ended";
 export type Outcome = Camp | "draw";
@@ -197,28 +207,113 @@ export const phaseNames: Record<Phase, string> = {
   intro: "Distribution",
   night: "Nuit",
   potions: "Nuit",
-  nightShot: "Nuit",
   dawn: "Aube",
+  dawnShot: "Riposte",
+  mayorElection: "Élection du Maire",
   debate: "Débat",
   vote: "Vote",
   runoff: "Départage",
+  mayorVerdict: "Décision du Maire",
   dayShot: "Riposte",
   ended: "Fin de partie",
 };
 export const isNight = (phase: Phase) =>
-  phase === "night" || phase === "potions" || phase === "nightShot";
+  phase === "night" || phase === "potions";
+export const isDayBallot = (phase: Phase) =>
+  phase === "mayorElection" || phase === "vote" || phase === "runoff";
+
+/** Whether a dead player's role is shown to everyone (same rule as `game.view`). */
+export const revealsOnDeath = (settings: Settings) =>
+  settings.mode !== "mystery" &&
+  (settings.mode !== "workshop" || settings.reveal);
+
+/**
+ * Night turns, in play order. When roles are revealed on death, a turn whose
+ * holder is dead is skipped. In hidden modes (Mystery, Workshop without
+ * reveal) the slot is kept so the deck stays public, but a dead holder only
+ * gets a short random masked window (`maskedSeconds`), and a live holder's
+ * turn never ends before `hiddenFloorSeconds`, so timing cannot single out a
+ * role. A turn also ends early (`graceSeconds`) once its actors are done.
+ * `witch` maps to the `potions` phase. The hunter has no night slot: if he died
+ * during the night, his shot is the `dawnShot` phase right after the dawn
+ * announcement.
+ */
+export const turnOrder = [
+  "pack",
+  "littleGirl",
+  "seer",
+  "guard",
+  "custom:0",
+  "custom:1",
+] as const;
+export type ActionTurn = (typeof turnOrder)[number];
+export type NightTurn = ActionTurn | "witch";
+export function turnOf(role: Role): ActionTurn | undefined {
+  if (role === "wolf") return "pack";
+  return (turnOrder as readonly string[]).includes(role)
+    ? (role as ActionTurn)
+    : undefined;
+}
+export function nightTurns(roles: Iterable<Role>): ActionTurn[] {
+  const present = new Set<string>();
+  for (const role of roles) {
+    const turn = turnOf(role);
+    if (turn) present.add(turn);
+  }
+  return turnOrder.filter((turn) => present.has(turn));
+}
+export function turnSeconds(turn: NightTurn) {
+  return turn === "pack" ? 30 : 20;
+}
+/** Masked window bounds for a dead holder's slot in hidden modes (seconds). */
+export const maskedRange = { min: 4, max: 8 } as const;
+/** Minimum total length of a night slot in hidden modes (seconds). */
+export const hiddenFloorSeconds = 4;
+/** Pause between "everyone is done" and the end of the slot (seconds). */
+export function graceSeconds(turn: NightTurn | undefined) {
+  return turn === "seer" ? 2 : 3;
+}
+/** A whole number of seconds in `maskedRange`; `random` returns [0, 1). */
+export function maskedSeconds(random: () => number = Math.random) {
+  const { min, max } = maskedRange;
+  return min + Math.floor(random() * (max - min + 1));
+}
+/**
+ * When a slot whose actors are done should end (epoch ms): after the grace,
+ * not before `floorSeconds` since it started, never later than its original
+ * deadline.
+ */
+export function earlyEndAt(slot: {
+  now: number;
+  started: number;
+  deadline: number;
+  graceSeconds: number;
+  floorSeconds: number;
+}) {
+  const wanted = Math.max(
+    slot.now + slot.graceSeconds * 1000,
+    slot.started + slot.floorSeconds * 1000,
+  );
+  return Math.min(slot.deadline, wanted);
+}
+export function turnName(turn: NightTurn, settings: Settings) {
+  if (turn === "pack") return "La Meute";
+  return cardFor(turn, settings).name;
+}
 export function secondsFor(phase: Phase, count: number, mode: Mode) {
   const express = mode === "express";
   const small = count <= 10;
   return {
     intro: 45,
-    night: 35,
-    potions: 25,
-    nightShot: 15,
+    night: turnSeconds("seer"),
+    potions: turnSeconds("witch"),
     dawn: 10,
+    dawnShot: 15,
+    mayorElection: 20,
     debate: express ? (small ? 75 : 100) : small ? 150 : 180,
     vote: express ? 20 : 30,
     runoff: express ? 15 : 20,
+    mayorVerdict: 15,
     dayShot: 15,
     ended: 0,
   }[phase];

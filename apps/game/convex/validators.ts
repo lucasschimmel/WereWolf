@@ -3,6 +3,7 @@ export const role = v.union(
   v.literal("villager"),
   v.literal("wolf"),
   v.literal("seer"),
+  v.literal("littleGirl"),
   v.literal("guard"),
   v.literal("hunter"),
   v.literal("witch"),
@@ -38,13 +39,24 @@ export const phase = v.union(
   v.literal("intro"),
   v.literal("night"),
   v.literal("potions"),
-  v.literal("nightShot"),
   v.literal("dawn"),
+  v.literal("dawnShot"),
+  v.literal("mayorElection"),
   v.literal("debate"),
   v.literal("vote"),
   v.literal("runoff"),
+  v.literal("mayorVerdict"),
   v.literal("dayShot"),
   v.literal("ended"),
+);
+export const nightTurn = v.union(
+  v.literal("pack"),
+  v.literal("littleGirl"),
+  v.literal("seer"),
+  v.literal("guard"),
+  v.literal("custom:0"),
+  v.literal("custom:1"),
+  v.literal("witch"),
 );
 export const outcome = v.union(
   v.literal("village"),
@@ -56,6 +68,7 @@ export const choices = v.record(v.string(), v.string());
 export const event = v.object({
   cycle: v.number(),
   label: v.string(),
+  mayor: v.optional(v.string()),
   deaths: v.optional(v.array(v.string())),
   votes: v.optional(choices),
 });

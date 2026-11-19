@@ -1,11 +1,11 @@
 import { createInterface } from "node:readline";
 import { ConvexError } from "convex/values";
 import {
-  type Camp,
   campNames,
   cardFor,
   modes,
   phaseNames,
+  turnName,
 } from "../apps/game/shared/rules.ts";
 import { DevRoom, type RoomView } from "./dev-room.ts";
 
@@ -31,11 +31,18 @@ Sans commande, démarre une session interactive.
   help                       Affiche les commandes
   quit                       Quitte la CLI, conserve les faux joueurs
 
-L’hôte règle et lance sa partie dans le navigateur. Les nuits comprennent
-plusieurs étapes serveur. Utilise status après next pour voir les actions.
+L’hôte règle et lance sa partie dans le navigateur. Chaque next passe à la phase
+ou au tour suivant. Utilise status après next pour voir qui peut agir.
 `;
 const nameOf = (view: RoomView, id: string) =>
   view.members.find((member) => member.id === id)?.name ?? (id || "passe");
+const intelLabels: Record<string, string> = {
+  ...campNames,
+  active: "a agi",
+  idle: "n’a pas agi",
+  packVoted: "a reçu au moins un vote de la Meute",
+  packDidNotVote: "n’a reçu aucun vote de la Meute",
+};
 const label = (error: unknown) =>
   error instanceof ConvexError && typeof error.data === "string"
     ? error.data
@@ -54,8 +61,9 @@ function showStatus(views: RoomView[], detailed: boolean) {
     ? Math.max(0, Math.ceil((match.remaining ?? match.end - Date.now()) / 1000))
     : 0;
   console.log(
-    `${first.code} · ${modes[first.settings.mode]} · ${first.members.length} joueurs · ${match ? `${phaseNames[match.phase]} · tour ${match.cycle} · ${match.remaining !== undefined ? "pause · " : ""}${seconds} s` : "Lobby"}`,
+    `${first.code} · ${modes[first.settings.mode]} · ${first.members.length} joueurs · ${match ? `${phaseNames[match.phase]}${match.turn ? ` (${turnName(match.turn, first.settings)})` : ""} · tour ${match.cycle} · ${match.remaining !== undefined ? "pause · " : ""}${seconds} s` : "Lobby"}`,
   );
+  if (match?.mayor) console.log(`Maire · ${nameOf(first, match.mayor)}`);
   for (const view of views) {
     const member = view.members.find((entry) => entry.id === view.me);
     const state = view.match;
@@ -93,7 +101,7 @@ function showStatus(views: RoomView[], detailed: boolean) {
       for (const intel of state.intel) {
         const [cycle, target, result] = intel.split("|");
         console.log(
-          `    Nuit ${cycle} · ${nameOf(view, target)} · ${campNames[result as Camp] ?? (result === "active" ? "a agi" : "n’a pas agi")}`,
+          `    Nuit ${cycle} · ${nameOf(view, target)} · ${intelLabels[result] ?? result}`,
         );
       }
   }

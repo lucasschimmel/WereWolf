@@ -5,7 +5,9 @@ import {
   type Role,
   type Settings,
 } from "../../shared/rules";
+import mayorArt from "../assets/cards/mayor.webp";
 import type { MatchView, View } from "../rooms/model";
+import { accentOf, CardBack, RoleCard } from "./cards";
 
 type Tone = "night" | "day" | "blood" | "gold" | "calm";
 export type Proclamation = {
@@ -14,6 +16,9 @@ export type Proclamation = {
   title: string;
   detail?: string;
   tone: Tone;
+  /** A revealed card shown under the announcement (a death at dawn). */
+  role?: Role;
+  mayorElected?: true;
 };
 
 const headlines: Partial<
@@ -30,6 +35,11 @@ const headlines: Partial<
     tone: role === "wolf" ? "blood" : "night",
   }),
   dawn: () => ({ title: "Le jour se lève", tone: "day" }),
+  mayorElection: () => ({
+    title: "Le village élit son Maire",
+    detail: "Le Maire tranche si le second vote reste à égalité.",
+    tone: "gold",
+  }),
   debate: () => ({
     title: "Débat",
     detail: "Accusez, défendez, mentez. Sur Discord.",
@@ -45,12 +55,26 @@ const headlines: Partial<
     detail: "Second vote entre les ex æquo.",
     tone: "gold",
   }),
+  mayorVerdict: () => ({
+    title: "Le départage reste à égalité",
+    detail: "Le Maire peut désigner une personne parmi les ex æquo.",
+    tone: "gold",
+  }),
   dayShot: () => ({
     title: "Le Chasseur riposte",
     detail: "Un dernier tir avant de tomber.",
     tone: "blood",
   }),
+  dawnShot: () => ({
+    title: "Le Chasseur riposte",
+    detail: "Un dernier tir avant de tomber.",
+    tone: "blood",
+  }),
 };
+
+/** How long an announcement stays up; a revealed card needs longer. */
+const shown = (item: Proclamation) =>
+  item.role || item.mayorElected ? 5200 : 3400;
 
 function tally(votes: Record<string, string>) {
   const counts = new Map<string, number>();
@@ -107,7 +131,13 @@ export function useHerald(
       state.phase = match.phase;
     }
     for (const event of match.events.slice(state.events)) {
-      if (event.votes) {
+      if (event.mayor) {
+        push(400, {
+          title: `${name(event.mayor)} devient Maire`,
+          tone: "gold",
+          mayorElected: true,
+        });
+      } else if (event.votes) {
         const ranking = tally(event.votes);
         const top = ranking[0];
         const tied =
@@ -144,9 +174,10 @@ export function useHerald(
               ? `${name(id)} ne s’est pas réveillé·e`
               : `${name(id)} est éliminé·e`,
             detail: revealed
-              ? `C’était : ${cardFor(revealed, settings).name}`
+              ? `Sa carte se retourne : ${cardFor(revealed, settings).name}`
               : "Sa carte reste secrète.",
             tone: "blood",
+            role: revealed,
           });
         }
       }
@@ -155,45 +186,80 @@ export function useHerald(
     if (additions.length) setQueue((current) => [...current, ...additions]);
   }, [match, members, settings]);
 
-  const live = queue.filter((item) => item.at <= now && now - item.at < 3400);
+  const live = queue.filter(
+    (item) => item.at <= now && now - item.at < shown(item),
+  );
   useEffect(() => {
-    if (queue.some((item) => now - item.at >= 3400))
-      setQueue((current) => current.filter((item) => now - item.at < 3400));
+    if (queue.some((item) => now - item.at >= shown(item)))
+      setQueue((current) =>
+        current.filter((item) => now - item.at < shown(item)),
+      );
   }, [now, queue]);
   return live.at(-1);
 }
 
-export function Herald({ item }: { item?: Proclamation }) {
+/** A short announcement over the scene, with a card for deaths or elections. */
+export function Herald({
+  item,
+  settings,
+}: {
+  item?: Proclamation;
+  settings?: Settings;
+}) {
   if (!item) return null;
+  const hasCard = item.role || item.mayorElected;
   return (
     <div
-      className={`herald tone-${item.tone}`}
+      className={`herald tone-${item.tone}${hasCard ? " with-card" : ""}`}
       key={item.id}
       role="status"
       aria-live="polite"
     >
-      <span className="herald-rule" aria-hidden="true" />
       <h2>{item.title}</h2>
+      {item.mayorElected && (
+        <div className="tcg tcg-photo herald-card">
+          <img
+            className="tcg-face"
+            src={mayorArt}
+            alt="Fonction publique. Le Maire tranche si le second vote reste à égalité."
+            draggable={false}
+          />
+        </div>
+      )}
+      {item.role && settings && (
+        <RoleCard
+          kind={item.role}
+          settings={settings}
+          className="herald-card"
+        />
+      )}
       {item.detail && <p>{item.detail}</p>}
-      <span className="herald-rule" aria-hidden="true" />
     </div>
   );
 }
 
+/** Full-screen reveal of the player's own card, then it goes to the hand. */
 export function RoleReveal({
   role,
   settings,
   onClose,
+  touch = false,
   children,
 }: {
   role: Role;
   settings: Settings;
   onClose: () => void;
-  children: ReactNode;
+  touch?: boolean;
+  children?: ReactNode;
 }) {
   useEffect(() => {
-    const timer = window.setTimeout(onClose, 7000);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(onClose, 8000);
+    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", close);
+    };
   }, [onClose]);
   const card = cardFor(role, settings);
   return (
@@ -205,16 +271,21 @@ export function RoleReveal({
       <button
         type="button"
         className="reveal-backdrop"
-        aria-label="Fermer"
+        aria-label="Garder ta carte en main"
         onClick={onClose}
       />
-      <div className="reveal-card">
-        <p className="reveal-kicker">Tu es</p>
-        {children}
-        <button type="button" className="ghost" onClick={onClose}>
-          Garder le secret
-        </button>
+      <p className="reveal-kicker" style={{ color: accentOf(role) }}>
+        Tu es
+      </p>
+      <div className="reveal-stack">
+        <CardBack className="reveal-ghost left" />
+        <CardBack className="reveal-ghost right" />
+        <RoleCard kind={role} settings={settings} className="reveal-card" />
       </div>
+      <div className="reveal-notes">{children}</div>
+      <p className="reveal-hint">
+        {touch ? "Touche" : "Clique"} pour garder ta carte en main
+      </p>
     </div>
   );
 }

@@ -45,10 +45,33 @@ export default function Village(props: SceneState) {
     <div className="stage" ref={host}>
       <div className="stage-veil" ref={veil} aria-hidden="true" />
       {failed && (
-        <p className="stage-fallback">
-          La scène 3D est indisponible sur cet appareil. La partie reste jouable
-          depuis l’interface.
-        </p>
+        <div className="stage-fallback">
+          <p>
+            La scène 3D est indisponible sur cet appareil. Tu peux quand même
+            désigner quelqu’un ici.
+          </p>
+          {props.targets.length > 0 && (
+            <div className="fallback-targets">
+              {props.members
+                .filter((member) => props.targets.includes(member.id))
+                .map((member) => (
+                  <button
+                    type="button"
+                    key={member.id}
+                    aria-pressed={props.selected === member.id}
+                    onClick={() => props.onSelect(member.id)}
+                  >
+                    {member.name}
+                  </button>
+                ))}
+              {props.onPass && (
+                <button type="button" onClick={props.onPass}>
+                  Passer
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

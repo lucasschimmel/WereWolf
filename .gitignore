@@ -11,3 +11,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
+.dev.vars
+.wrangler/
+apps/relay/worker-configuration.d.ts
+.playwright/
