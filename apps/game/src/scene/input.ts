@@ -15,6 +15,11 @@ const handled = new Set([
   "ShiftRight",
 ]);
 
+/** Radians a swipe across the full screen height turns the view. */
+const touchTurn = 2.8;
+/** Share of the pending finger motion applied each frame (eases the view). */
+const touchEase = 0.4;
+
 type Tracked = { x: number; y: number; travel: number; start: number };
 
 function editable(target: EventTarget | null) {
@@ -31,6 +36,8 @@ export class Input {
   private keys = new Set<string>();
   private pointers = new Map<number, Tracked>();
   private look = { x: 0, y: 0 };
+  /** Finger drags, in pixels still to be applied to the view. */
+  private touchLook = { x: 0, y: 0 };
   private pinch = 0;
   zoom = 1;
   hover?: { x: number; y: number };
@@ -139,8 +146,13 @@ export class Input {
       return;
     }
     if (tracked.travel > 6) this.dragging = true;
-    this.look.x += dx;
-    this.look.y += dy;
+    if (event.pointerType === "touch") {
+      this.touchLook.x += dx;
+      this.touchLook.y += dy;
+    } else {
+      this.look.x += dx;
+      this.look.y += dy;
+    }
   };
 
   private up = (event: PointerEvent) => {
@@ -171,8 +183,24 @@ export class Input {
 
   /** Look delta in radians since the previous frame. */
   takeLook() {
-    const factor = useControls.getState().sensitivity * 0.0042;
-    const result = { yaw: -this.look.x * factor, pitch: this.look.y * factor };
+    const sensitivity = useControls.getState().sensitivity;
+    const factor = sensitivity * 0.0042;
+    // A finger swipe is scaled to the screen: a swipe across the full height
+    // turns the view by `touchTurn` radians, whatever the phone's size, and
+    // only a share of the pending motion is applied per frame so it eases.
+    const touch =
+      (sensitivity * touchTurn) / Math.max(this.canvas.clientHeight, 200);
+    const take = (pending: number) => pending * touchEase;
+    const dx = take(this.touchLook.x);
+    const dy = take(this.touchLook.y);
+    this.touchLook.x -= dx;
+    this.touchLook.y -= dy;
+    if (Math.abs(this.touchLook.x) < 0.1) this.touchLook.x = 0;
+    if (Math.abs(this.touchLook.y) < 0.1) this.touchLook.y = 0;
+    const result = {
+      yaw: -this.look.x * factor - dx * touch,
+      pitch: this.look.y * factor + dy * touch,
+    };
     this.look.x = 0;
     this.look.y = 0;
     return result;
