@@ -75,6 +75,35 @@ class RoomBoundary extends Component<
   }
 }
 
+/**
+ * Copies text even on plain-http origins (LAN IP), where `navigator.clipboard`
+ * is unavailable because the page is not a secure context.
+ */
+async function copyText(text: string) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (cause) {
+    console.warn("Clipboard API refused, using the fallback", cause);
+  }
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.setAttribute("readonly", "");
+  field.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+  document.body.appendChild(field);
+  field.select();
+  field.setSelectionRange(0, text.length);
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+  }
+}
+
 function useNow(interval = 250) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -294,10 +323,8 @@ function RoomContent({
         text: `Rejoins le village ${room.code}`,
         url,
       });
-    else {
-      await navigator.clipboard.writeText(url);
-      notify("Lien d’invitation copié");
-    }
+    else if (await copyText(url)) notify("Lien d’invitation copié");
+    else notify(`Copie impossible — lien : ${url}`, "error");
   };
   const free = !match || match.phase === "intro" || match.phase === "debate";
   const canPause =
