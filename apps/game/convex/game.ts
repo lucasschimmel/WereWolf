@@ -1,10 +1,11 @@
 import { v } from "convex/values";
 import { normalizePose } from "../shared/motion";
+import { isNight } from "../shared/rules";
 import { signTicket, ticketLifetime } from "../shared/ticket";
 import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { access, fail, roster } from "./access";
-import { alive, camp, inspect, turnAbility } from "./engine";
+import { alive, camp, inspect, nightOrder, turnAbility } from "./engine";
 import { publicTiming, schedule, settleEarly } from "./phases";
 import { credentials } from "./validators";
 
@@ -74,6 +75,7 @@ export const view = query({
         events: match.events,
         audit: ended ? match.audit : undefined,
         role: seat.role,
+        nightOrder: isNight(match.phase) ? nightOrder(match) : undefined,
         intel: seat.intel,
         mates,
         wolves:

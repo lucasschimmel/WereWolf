@@ -1,9 +1,6 @@
 import {
   cardFor,
-  deckFor,
   type NightTurn,
-  nightTurns,
-  revealsOnDeath,
   type Settings,
   turnName,
 } from "../../shared/rules";
@@ -53,35 +50,10 @@ const turnTones: Partial<Record<NightTurn, Tone>> = {
 const shortName = (turn: NightTurn, settings: Settings) =>
   turn === "pack" ? "Meute" : turnName(turn, settings);
 
-/**
- * The night's slots in play order, from the publicly dealt deck. When roles
- * are revealed on death, slots whose holder is known dead are left out. The
- * hunter has no night slot: his shot happens at dawn, once the deaths are known.
- */
 export function nightSteps(room: View, match: MatchView): Step[] {
-  let deck: ReturnType<typeof deckFor>;
-  try {
-    deck = deckFor(room.members.length, room.settings);
-  } catch (cause) {
-    console.warn("Night order unavailable for this deck", cause);
-    return [];
-  }
-  const turns: NightTurn[] = [...nightTurns(deck)];
-  if (deck.includes("witch")) turns.push("witch");
-  const known = revealsOnDeath(room.settings)
-    ? new Set(
-        room.members
-          .filter((member) => !member.alive && member.role)
-          .map((member) => member.role),
-      )
-    : new Set<string>();
-  const visible = turns.filter((turn) => {
-    if (turn === match.turn) return true;
-    const role = turn === "pack" ? "wolf" : turn;
-    return turn === "pack" || !known.has(role);
-  });
-  const current = match.turn ? visible.indexOf(match.turn) : -1;
-  return visible.map((turn, index) => ({
+  const turns = match.nightOrder ?? [];
+  const current = match.turn ? turns.indexOf(match.turn) : -1;
+  return turns.map((turn, index) => ({
     label: shortName(turn, room.settings),
     state: index < current ? "done" : index === current ? "now" : "next",
   }));
