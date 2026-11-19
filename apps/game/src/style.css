@@ -436,6 +436,10 @@ input[type="checkbox"] {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
+.phase-ended .corner-right {
+  z-index: 1;
+}
+
 /* ---------- Side panels (hub and lobby) ---------- */
 
 .panel {
@@ -608,7 +612,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 14px;
-  max-width: calc(100% - 2 * var(--gutter) - 260px);
+  max-width: calc(100% - 2 * var(--gutter) - 512px);
   padding: 10px 18px 10px 12px;
   border-radius: var(--radius);
   background: var(--panel);
@@ -1278,6 +1282,122 @@ button.tcg:hover {
   flex: 1;
   overflow-y: auto;
   padding: 0 20px calc(20px + var(--safe-bottom));
+}
+
+/* ---------- Room chat ---------- */
+
+.chat-toggle {
+  position: relative;
+}
+
+.chat-unread {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ember);
+}
+
+.drawer:has(.room-chat) {
+  padding-right: var(--safe-right);
+}
+
+.drawer-body:has(> .room-chat) {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.room-chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chat-channels {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.chat-channels .chip {
+  position: relative;
+}
+
+.chat-channels button[aria-pressed="true"] {
+  color: var(--ember);
+  box-shadow: inset 0 0 0 1px var(--ember);
+}
+
+.chat-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.chat-thread:focus-visible {
+  outline-offset: -2px;
+}
+
+.chat-messages {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-messages li {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.chat-messages .chat-own {
+  border-left: 2px solid var(--ember);
+}
+
+.chat-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chat-meta time,
+.chat-status {
+  color: var(--bone-dim);
+  font-size: 0.9rem;
+}
+
+.chat-meta time {
+  flex-shrink: 0;
+}
+
+.chat-compose {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.chat-compose input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: var(--ink);
+  font-size: 1rem;
 }
 
 /* ---------- Roster and journal ---------- */

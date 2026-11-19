@@ -21,6 +21,7 @@ import { Drawer, Joystick, SettingsPanel } from "../ui/controls";
 import { useCoarse } from "../ui/device";
 import { Herald, RoleReveal, useHerald } from "../ui/Herald";
 import { Status } from "../ui/PhaseClock";
+import { Chat } from "./Chat";
 import {
   type Action,
   nightSteps,
@@ -36,7 +37,7 @@ import { RotatePrompt, TargetPicker } from "./Picker";
 import { usePresence } from "./presence";
 
 const Village = lazy(() => import("../scene/Village"));
-type Panel = "roster" | "journal" | "settings" | null;
+type Panel = "roster" | "journal" | "settings" | "chat" | null;
 type Toast = { id: number; text: string; tone: "error" | "info" };
 
 export function Room({
@@ -414,6 +415,14 @@ function RoomContent({
         )}
 
         <nav className="corner-right" aria-label="Menu">
+          <Chat
+            key={room.me}
+            credentials={credentials}
+            me={room.me}
+            open={panel === "chat"}
+            onOpen={() => setPanel("chat")}
+            onClose={() => setPanel(null)}
+          />
           <button
             type="button"
             className="icon-button"
