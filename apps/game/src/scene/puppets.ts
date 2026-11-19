@@ -304,6 +304,13 @@ export class PuppetFactory {
     0,
   );
   readonly hitMaterial = new T.MeshBasicMaterial({ visible: false });
+  /** Pale, see-through look for villagers asleep at home during the night. */
+  readonly ghostMaterial = new T.MeshBasicMaterial({
+    color: "#9db0d8",
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+  });
   readonly shadowGeometry = new T.CircleGeometry(0.5, 16).rotateX(-Math.PI / 2);
   readonly shadowMaterial: T.MeshBasicMaterial;
   constructor(
@@ -333,12 +340,13 @@ export class PuppetFactory {
       for (const geometry of Object.values(parts)) geometry.dispose();
     this.hitGeometry.dispose();
     this.hitMaterial.dispose();
+    this.ghostMaterial.dispose();
     this.shadowGeometry.dispose();
     this.shadowMaterial.dispose();
   }
 }
 
-export type Gesture = "none" | "wave" | "point" | "cheer" | "mourn";
+export type Gesture = "none" | "wave" | "point" | "cheer" | "mourn" | "sleep";
 
 export class Puppet {
   readonly root = new T.Group();
@@ -358,6 +366,10 @@ export class Puppet {
   private dying = -1;
   private initialised = false;
   private waveTimer = 0;
+  private meshes: T.Mesh[] = [];
+  private ghost = false;
+  private solid: T.Material;
+  private ghostMaterial: T.Material;
   gesture: Gesture = "none";
   readonly position = new T.Vector3();
   yaw = 0;
@@ -366,14 +378,17 @@ export class Puppet {
     readonly id: string,
     readonly character: number,
     factory: PuppetFactory,
-    castShadow: boolean,
+    private castShadow: boolean,
   ) {
     const parts = factory.parts(character);
     const solid = factory.materials.solid;
+    this.solid = solid;
+    this.ghostMaterial = factory.ghostMaterial;
     const add = (parent: T.Object3D, geometry: T.BufferGeometry) => {
       const mesh = new T.Mesh(geometry, solid);
       mesh.castShadow = castShadow;
       parent.add(mesh);
+      this.meshes.push(mesh);
     };
     this.seed = (id.charCodeAt(id.length - 1) || 7) * 1.37;
     this.root.add(this.body);
@@ -434,6 +449,16 @@ export class Puppet {
     this.root.add(this.label);
   }
 
+  /** Shows the puppet as a sleeping silhouette that casts no shadow. */
+  setGhost(on: boolean) {
+    if (on === this.ghost) return;
+    this.ghost = on;
+    for (const mesh of this.meshes) {
+      mesh.material = on ? this.ghostMaterial : this.solid;
+      mesh.castShadow = !on && this.castShadow;
+    }
+  }
+
   wave() {
     this.waveTimer = 1.6;
   }
@@ -454,7 +479,7 @@ export class Puppet {
     delta: number,
     time: number,
     goal: Pose | null,
-    mode: "walk" | "glide" | "snap",
+    mode: "walk" | "glide" | "snap" | "track",
     look?: T.Vector3,
   ) {
     if (!goal) {
@@ -479,6 +504,12 @@ export class Puppet {
         this.position.x += (dx / distance) * step;
         this.position.z += (dz / distance) * step;
       }
+    } else if (
+      mode === "track" &&
+      Math.hypot(goal.x - this.position.x, goal.z - this.position.z) < 1.5
+    ) {
+      // Network poses are already smoothed: follow exactly, glide only to rejoin.
+      this.position.set(goal.x, 0, goal.z);
     } else {
       const k = 1 - Math.exp(-delta * 7);
       this.position.x += (goal.x - this.position.x) * k;
@@ -537,6 +568,10 @@ export class Puppet {
       this.armLeft.rotation.set(0, 0, -2.6 - hop * 0.3);
       this.armRight.rotation.set(0, 0, 2.6 + hop * 0.3);
       this.head.rotation.x = -0.2;
+    } else if (this.gesture === "sleep") {
+      this.head.rotation.set(0.55, 0, 0.18);
+      this.armLeft.rotation.set(0.15, 0, 0.12);
+      this.armRight.rotation.set(0.15, 0, -0.12);
     } else if (this.gesture === "mourn") {
       this.head.rotation.x = 0.45;
       this.torso.rotation.x = 0.18;

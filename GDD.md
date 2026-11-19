@@ -6,22 +6,23 @@ WereWolf est un Loup-Garou privé pour **8 à 15 amis**, tous joueurs. Le groupe
 
 ## 1. Le village comme lieu de jeu
 
-Les captures donnent deux repères de mise en scène : des joueurs physiquement présents autour d’une place et une bascule visible entre jour et nuit. Notre village est un hameau forestier aux maisons de bois peint et de pierre, avec un puits, un clocher et un cercle de lanternes sur la place. Les silhouettes, les bâtiments et les cartes ont leur propre direction artistique, inspirée du théâtre de marionnettes et des décors miniatures.
+Les captures donnent deux repères de mise en scène : des joueurs physiquement présents autour d’une place et une bascule visible entre jour et nuit. Notre village est un hameau forestier aux maisons de bois peint et de pierre, avec un puits, un clocher et un cercle de lanternes sur la place. Les silhouettes et les bâtiments s’inspirent du théâtre de marionnettes et des décors miniatures. Les rôles sont des **cartes à collectionner** (style TCG) : cadre aux couleurs du rôle, illustration, gemme de camp, texte de pouvoir et phrase d’ambiance. L’interface se limite à de petits panneaux, un bandeau d’état et ces cartes ; la scène 3D occupe tout l’écran.
 
-- **Accueil.** L’hôte partage un lien privé. Chacun choisit son pseudo et une silhouette, rejoint la place et se déclare prêt. Le mode, le paquet exact et les règles de révélation sont visibles avant la distribution. Le lancement verrouille les places et les règles. L’hôte reçoit une carte comme tout le monde.
-- **Jour.** Déplacement libre autour de la place en vue à la première personne. Au début du vote, chacun rejoint automatiquement son emplacement dans le cercle. On peut sélectionner un avatar ou utiliser la liste des joueurs au clavier. Pseudo et statut restent lisibles dans les deux vues.
-- **Nuit.** Le village s’assombrit et chacun passe dans un intérieur privé identique en durée et en mise en scène publique. Une carte et un panneau privés affichent les actions disponibles. Les présences, déplacements, lumières et sons individuels ne trahissent aucune action.
+- **Arrivée.** Le joueur apparaît directement sur une place, seul. Un petit panneau à gauche règle son prénom et sa silhouette, un autre à droite crée un salon ou en rejoint un avec un code. Aucun menu plein écran.
+- **Salon.** Tous les joueurs se retrouvent sur la même place et se déclarent prêts. Le panneau de droite montre le code, le mode, le paquet exact en mini-cartes et le lancement. Le lancement verrouille les places et les règles. L’hôte reçoit une carte comme tout le monde.
+- **Jour.** Déplacement libre autour de la place. Au début du vote, chacun rejoint son emplacement dans le cercle et un bandeau annonce le vote. On vote en **pointant** un villageois dans la scène, sans liste : survol pour viser, clic pour choisir, clic droit pour s’abstenir. Au clavier, Tab passe d’une cible à l’autre et Entrée valide.
+- **Nuit.** Le village s’assombrit et chacun rentre chez lui. La nuit se joue **tour par tour** : quand vient son tour, le joueur voit sa carte, puis il est replacé seul sur la place pour pointer sa cible. Les autres joueurs y apparaissent en silhouettes endormies. Les loups jouent ensemble et voient la visée de leurs partenaires. Les présences, lumières et sons individuels ne trahissent aucune action.
 - **Élimination.** La lanterne du joueur s’éteint. Il peut observer le village et consulter le journal public, avec les mêmes informations publiques que les vivants. Ses actions cessent après son éventuel pouvoir de mort. Sur Discord, les vivants parlent pendant le jour, tout le monde se tait la nuit et les éliminés peuvent rejoindre un salon séparé.
 - **Fin.** Le tableau révèle les rôles, le camp gagnant et la chronologie des actions. Le groupe peut relancer avec le même paquet ou changer de configuration.
 
-Le journal public affiche les changements de phase, les résultats de scrutin et les annonces de décès. L’interface affiche aussi la phase et son temps restant en texte. Une sensibilité réglable, une option de mouvement réduit et la liste de joueurs permettent de jouer sans viser précisément ni dépendre d’un signal sonore.
+Le journal public affiche les changements de phase, les résultats de scrutin et les annonces de décès. L’interface affiche aussi la phase et son temps restant en texte. Une sensibilité réglable, une option de mouvement réduit et la visée au clavier (Tab, Entrée) permettent de jouer sans viser précisément ni dépendre d’un signal sonore.
 
 ## 2. Boucle et arbitrage
 
 | Moment | Durée proposée | Décision |
 |---|---:|---|
 | Découverte et salutations | 45 s | Lecture privée de sa carte, courte prise de parole libre sur Discord |
-| Nuit | 60 s | Dépôt privé des choix, puis résolution selon l’ordre ci-dessous |
+| Nuit | Meute 30 s, puis 20 s par carte d’action du paquet, Sorcière 20 s, Chasseur 15 s | Tour par tour selon l’ordre ci-dessous |
 | Aube | 10 s | Le village découvre les morts et, par défaut, leurs cartes |
 | Débat | 150 s jusqu’à 10 joueurs, 180 s dès 11 | Discussion libre sur Discord |
 | Vote | 30 s | Choix secret et modifiable jusqu’à clôture |
@@ -32,7 +33,7 @@ Le journal public affiche les changements de phase, les résultats de scrutin et
 
 **Vote de la meute.** Les loups connaissent leurs partenaires et voient leurs bulletins de nuit en direct. Chaque loup peut voter pour un vivant hors meute, modifier son choix ou s’abstenir. La cible avec le plus de voix est retenue. Une égalité en tête ou zéro voix annule l’attaque. Ce panneau constitue leur moyen de coordination nocturne.
 
-**Ordre nocturne.** Les choix de la Meute, du Veilleur, de la Voyante et des cartes personnalisées compatibles sont saisis dans les 35 premières secondes. Le jeu verrouille les cibles et applique la protection. La Sorcière reçoit ensuite la victime provisoire, si l’attaque reste fatale, et dispose de 25 secondes pour choisir. Le jeu applique le soin, puis le poison, regroupe les décès et résout toutes les ripostes avant de publier l’aube. Les résultats d’observation portent sur le camp à l’ouverture de la nuit et sont remis en privé aux observateurs encore vivants après résolution. Les fenêtres publiques ont la même durée même si des pouvoirs sont absents, épuisés ou déjà joués. Chaque nuit d’un paquet contenant le Chasseur comprend une fenêtre de riposte fixe de 15 secondes. Elle s’écoule même en l’absence de tir. Les paquets proposés contiennent au plus un Chasseur, donc la résolution comporte au plus une riposte.
+**Ordre nocturne.** La nuit enchaîne un tour par carte d’action présente dans le paquet : la Meute (30 s), la Voyante, le Veilleur, puis les cartes de l’Atelier (20 s chacune). Pendant un tour, seuls ses détenteurs vivants agissent. La Voyante découvre le camp de sa cible aussitôt son choix fait, et ce choix est définitif. À la fin du dernier tour d’action, le jeu verrouille les cibles et applique la protection. Vient ensuite le tour de la Sorcière (20 s) : elle voit la victime provisoire, si l’attaque reste fatale, verse le remède en un clic et sort sur la place pour pointer la cible de son poison. Le jeu applique le soin, puis le poison, regroupe les décès, puis ouvre le tour du Chasseur (15 s) avant de publier l’aube. **Chaque tour d’une carte distribuée s’écoule en entier, même si son détenteur est mort, a déjà joué ou n’a plus d’usage.** Seul le paquet distribué, qui est public, détermine la durée de la nuit, si bien que le chronomètre ne révèle jamais qui est encore en vie. Les paquets proposés contiennent au plus un Chasseur, donc la résolution comporte au plus une riposte.
 
 **Décès.** Deux effets sur la même personne ne produisent qu’une élimination. Le Chasseur choisit parmi les vivants après le lot de décès qui l’a éliminé. Un délai expiré annule le tir. Le journal révèle les victimes et leurs cartes selon le mode. Les cibles sauvées, les rôles ayant agi et les causes privées restent secrets jusqu’à la fin.
 
@@ -96,13 +97,13 @@ Créer une carte consiste à remplir une fiche et choisir un effet dans une list
 | Camp | Village pour les cartes créées. Les loups du paquet conservent leur vote de meute. |
 | Déclencheur | Première nuit ou chaque nuit, avec une action maximum par déclenchement. |
 | Cible | Soi-même, autre vivant ou un vivant quelconque, selon l’effet. |
-| Effet | Observer le camp, protéger de l’attaque de la meute, ou observer si la cible a soumis une action nocturne valide pendant les 35 premières secondes. Cette dernière lecture n’inclut ni les potions ni les ripostes. |
+| Effet | Observer le camp, protéger de l’attaque de la meute, ou observer si la cible a soumis une action nocturne valide pendant les tours d’action de la nuit. Cette dernière lecture est rendue à la fin de ces tours et n’inclut ni les potions ni les ripostes. |
 | Usages | Une fois par partie ou à chaque nuit admissible. Une restriction de cible précédente peut s’appliquer à une protection récurrente. |
 | Visibilité | Choix et résultat privés. Les effets suivent l’ordre nocturne standard. |
 
 **Exemples originaux.**
 
-- **Le Guetteur du clocher · Village.** Une fois par partie, choisit un autre vivant. À l’aube, il apprend si cette personne a confirmé une action valide dans la première fenêtre de la nuit. Un vote valide de meute compte même si l’attaque échoue. Il ignore l’action et sa cible.
+- **Le Guetteur du clocher · Village.** Une fois par partie, choisit un autre vivant. À la fin des tours d’action, il apprend si cette personne a confirmé une action valide cette nuit. Un vote valide de meute compte même si l’attaque échoue. Il ignore l’action et sa cible.
 - **La Porteuse de braises · Village.** Première nuit uniquement, protège un autre vivant de l’attaque de la meute. Le village découvre les décès éventuels à l’aube selon ses règles habituelles.
 
 **Règles de composition.** L’Atelier conserve le nombre de loups du standard et accueille au plus deux cartes créées différentes. Conserver au moins deux Villageois simples, un seul rôle d’observation récurrente et une seule carte de protection ou de soin, Sorcière comprise. L’éditeur indique précisément quelle carte retirer ou modifier quand une règle bloque le lancement. Aucun camp personnalisé en première version. Les choix sont figés pour toute la partie.

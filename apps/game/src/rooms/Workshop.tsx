@@ -29,8 +29,7 @@ export function Workshop({
       ),
     });
   return (
-    <details className="workshop">
-      <summary>Atelier de cartes</summary>
+    <div className="workshop">
       <label className="check">
         <input
           type="checkbox"
@@ -169,6 +168,6 @@ export function Workshop({
       <button type="button" className="primary" onClick={() => save(draft)}>
         Appliquer au salon
       </button>
-    </details>
+    </div>
   );
 }

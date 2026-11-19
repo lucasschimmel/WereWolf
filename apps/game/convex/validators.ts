@@ -46,6 +46,15 @@ export const phase = v.union(
   v.literal("dayShot"),
   v.literal("ended"),
 );
+export const nightTurn = v.union(
+  v.literal("pack"),
+  v.literal("seer"),
+  v.literal("guard"),
+  v.literal("custom:0"),
+  v.literal("custom:1"),
+  v.literal("witch"),
+  v.literal("hunter"),
+);
 export const outcome = v.union(
   v.literal("village"),
   v.literal("pack"),

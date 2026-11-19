@@ -3,9 +3,16 @@ import {
   deckFor,
   defaultCustom,
   defaultSettings,
+  earlyEndAt,
+  hiddenFloorSeconds,
+  maskedRange,
+  maskedSeconds,
   minForMode,
+  nightTurns,
   plurality,
+  revealsOnDeath,
   secondsFor,
+  turnSeconds,
   victory,
 } from "./rules";
 
@@ -33,6 +40,19 @@ describe("official room settings", () => {
     expect(secondsFor("night", 10, "express")).toBe(
       secondsFor("night", 10, "classic"),
     );
+  });
+});
+describe("night turns", () => {
+  test("follow the dealt deck in a fixed order", () => {
+    expect(nightTurns(deckFor(10, defaultSettings))).toEqual(["pack", "seer"]);
+    expect(nightTurns(deckFor(8, defaultSettings))).toEqual([
+      "pack",
+      "seer",
+      "guard",
+    ]);
+  });
+  test("give the pack the longest slot", () => {
+    expect(turnSeconds("pack")).toBeGreaterThan(turnSeconds("seer"));
   });
 });
 describe("Workshop decks", () => {
@@ -70,6 +90,44 @@ describe("Workshop decks", () => {
         replaced: ["wolf"],
       }),
     ).toThrow("remplacée");
+  });
+});
+describe("night timing helpers", () => {
+  test("reveals roles on death except in Mystery and hidden Workshop", () => {
+    expect(revealsOnDeath(defaultSettings)).toBe(true);
+    expect(revealsOnDeath({ ...defaultSettings, mode: "mystery" })).toBe(false);
+    expect(
+      revealsOnDeath({ ...defaultSettings, mode: "workshop", reveal: false }),
+    ).toBe(false);
+    expect(
+      revealsOnDeath({ ...defaultSettings, mode: "workshop", reveal: true }),
+    ).toBe(true);
+  });
+  test("picks masked windows within the allowed range", () => {
+    expect(maskedSeconds(() => 0)).toBe(maskedRange.min);
+    expect(maskedSeconds(() => 0.9999)).toBe(maskedRange.max);
+  });
+  test("ends a finished slot after the grace, never past its deadline", () => {
+    const slot = {
+      now: 10_000,
+      started: 0,
+      deadline: 20_000,
+      graceSeconds: 3,
+      floorSeconds: 0,
+    };
+    expect(earlyEndAt(slot)).toBe(13_000);
+    expect(earlyEndAt({ ...slot, now: 19_000 })).toBe(20_000);
+  });
+  test("holds a fast slot up to the floor in hidden modes", () => {
+    expect(
+      earlyEndAt({
+        now: 1_000,
+        started: 0,
+        deadline: 20_000,
+        graceSeconds: 2,
+        floorSeconds: hiddenFloorSeconds,
+      }),
+    ).toBe(hiddenFloorSeconds * 1000);
   });
 });
 test("plurality keeps both tied candidates but discards abstention", () => {

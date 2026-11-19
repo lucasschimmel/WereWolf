@@ -1,10 +1,11 @@
 import { v } from "convex/values";
-import { isNight } from "../shared/rules";
+import { validPose } from "../shared/motion";
+import { signTicket, ticketLifetime } from "../shared/ticket";
 import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { access, fail, roster } from "./access";
-import { alive, camp, nightAbility } from "./engine";
-import { publicTiming, schedule } from "./phases";
+import { alive, camp, inspect, turnAbility } from "./engine";
+import { publicTiming, schedule, settleEarly } from "./phases";
 import { credentials } from "./validators";
 
 export const view = query({
@@ -50,8 +51,7 @@ export const view = query({
       match.hunter === player._id;
     const witch =
       match.phase === "potions" && seat.alive && seat.role === "witch";
-    const ability =
-      match.phase === "night" ? nightAbility(match, player._id) : undefined;
+    const ability = turnAbility(match, player._id);
     const targets = ballot
       ? (match.phase === "runoff" ? match.runoff : living).filter(
           (id) => id !== player._id,
@@ -63,7 +63,6 @@ export const view = query({
       seat.role === "wolf"
         ? Object.keys(match.seats).filter((id) => camp(match, id) === "pack")
         : [];
-    const revealIntel = !isNight(match.phase);
     return {
       ...base,
       match: {
@@ -75,18 +74,20 @@ export const view = query({
         events: match.events,
         audit: ended ? match.audit : undefined,
         role: seat.role,
-        intel: revealIntel
-          ? seat.intel.filter(
-              (entry) =>
-                Number(entry.split("|")[0]) < match.cycle || seat.alive,
-            )
-          : seat.intel.filter(
-              (entry) => Number(entry.split("|")[0]) < match.cycle,
-            ),
+        intel: seat.intel,
         mates,
         wolves:
           ability?.action === "wolf"
             ? Object.fromEntries(mates.map((id) => [id, match.night[id] ?? ""]))
+            : undefined,
+        // Votes are public and live, but only during vote/runoff.
+        ballots:
+          match.phase === "vote" || match.phase === "runoff"
+            ? Object.fromEntries(
+                Object.entries(match.votes).filter(
+                  ([voter, target]) => target && match.seats[voter]?.alive,
+                ),
+              )
             : undefined,
         action: ballot
           ? ("vote" as const)
@@ -109,6 +110,7 @@ export const view = query({
                 : [],
               heal: match.heal,
               poison: match.poison,
+              done: match.done === true,
             }
           : undefined,
       },
@@ -129,6 +131,7 @@ export const choose = mutation({
       v.literal("activity"),
       v.literal("heal"),
       v.literal("poison"),
+      v.literal("done"),
     ),
   },
   handler: async (ctx, { code, key, target, action }) => {
@@ -145,7 +148,8 @@ export const choose = mutation({
         (target && !match.seats[target]?.alive)
       )
         fail("Riposte indisponible.");
-      await ctx.db.patch(match._id, { shot: target });
+      await ctx.db.patch(match._id, { shot: target, done: true });
+      await settleEarly(ctx, match._id);
       return;
     }
     if (!seat.alive) fail("Tu observes la partie.");
@@ -161,15 +165,22 @@ export const choose = mutation({
       await ctx.db.patch(match._id, {
         votes: { ...match.votes, [id]: target },
       });
+      await settleEarly(ctx, match._id);
       return;
     }
-    if (action === "heal" || action === "poison") {
+    if (action === "heal" || action === "poison" || action === "done") {
       if (match.phase !== "potions" || seat.role !== "witch")
         fail("Potions indisponibles.");
+      if (action === "done") {
+        await ctx.db.patch(match._id, { done: true });
+        await settleEarly(ctx, match._id);
+        return;
+      }
       if (action === "heal") {
         if (target && (!seat.heal || target !== match.attack))
           fail("Remède indisponible.");
         await ctx.db.patch(match._id, { heal: !!target });
+        await settleEarly(ctx, match._id);
         return;
       }
       if (
@@ -178,16 +189,25 @@ export const choose = mutation({
       )
         fail("Poison indisponible.");
       await ctx.db.patch(match._id, { poison: target });
+      await settleEarly(ctx, match._id);
       return;
     }
-    const ability =
-      match.phase === "night" ? nightAbility(match, id) : undefined;
+    const ability = turnAbility(match, id);
     if (
       ability?.action !== action ||
       (target && !ability.targets.includes(target))
     )
-      fail("Action de nuit indisponible.");
+      fail("Ce n’est pas ton tour, ou cette cible est indisponible.");
+    if (action === "inspect") {
+      if (match.night[id] !== undefined) fail("Ta vision est déjà faite.");
+      const { _id, _creationTime, ...next } = match;
+      inspect(next, id, target);
+      await ctx.db.patch(_id, { night: next.night, seats: next.seats });
+      await settleEarly(ctx, _id);
+      return;
+    }
     await ctx.db.patch(match._id, { night: { ...match.night, [id]: target } });
+    await settleEarly(ctx, match._id);
   },
 });
 
@@ -246,7 +266,31 @@ export const positions = query({
         .query("positions")
         .withIndex("by_room", (q) => q.eq("room", room._id))
         .collect()
-    ).map(({ player, x, z, yaw }) => ({ player, x, z, yaw }));
+    ).map(({ player, x, z, yaw, updated }) => ({ player, x, z, yaw, updated }));
+  },
+});
+
+/**
+ * A short-lived ticket to join this room on the movement relay, or null when
+ * no relay is configured (clients then fall back to `move`/`positions`).
+ */
+export const ticket = mutation({
+  args: credentials,
+  handler: async (ctx, { code, key }) => {
+    const { room, player } = await access(ctx, code, key);
+    const secret = process.env.RELAY_SECRET;
+    if (!secret) return null;
+    return {
+      room: room._id,
+      ticket: await signTicket(
+        {
+          room: room._id,
+          player: player._id,
+          exp: Date.now() + ticketLifetime,
+        },
+        secret,
+      ),
+    };
   },
 });
 
@@ -261,18 +305,15 @@ export const move = mutation({
         !match.seats[player._id].alive)
     )
       return;
-    if (
-      ![x, z, yaw].every(Number.isFinite) ||
-      Math.hypot(x, z) > 10.01 ||
-      Math.abs(yaw) > Math.PI + 0.01
-    )
-      return;
+    if (!validPose({ x, z, yaw, t: 0 })) return;
     const previous = await ctx.db
       .query("positions")
       .withIndex("by_player", (q) => q.eq("player", player._id))
       .unique();
     const updated = Date.now();
-    if (previous && updated - previous.updated < 125) return;
+    // Clients send at most every 200 ms; this only stops bursts. The client
+    // always follows a burst with a final "at rest" report, so none is lost.
+    if (previous && updated - previous.updated < 50) return;
     if (previous) await ctx.db.patch(previous._id, { x, z, yaw, updated });
     else
       await ctx.db.insert("positions", {

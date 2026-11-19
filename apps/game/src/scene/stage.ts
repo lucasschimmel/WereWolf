@@ -4,6 +4,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import type { Outcome, Phase, Role } from "../../shared/rules";
+import type { MotionFeed } from "../net/motion";
 import { useControls } from "../store";
 import { Cast, type SceneMember } from "./cast";
 import {
@@ -47,15 +48,23 @@ export type SceneState = {
   showcase: boolean;
   members: SceneMember[];
   me: string;
-  positions: { player: string; x: number; z: number; yaw: number }[];
+  /** Remote movement, sampled every frame (absent in the showcase). */
+  motion?: MotionFeed;
   phase?: Phase;
   events: SceneEvent[];
   role?: Role;
   outcome?: Outcome;
   targets: string[];
   selected?: string;
-  onMove: (pose: Pose) => void;
+  /** True while this player must point at someone on the square at night. */
+  aiming?: boolean;
+  /** Other players shown awake on the square during this night turn. */
+  awake?: string[];
+  /** Live aims of the other awake players (the pack's ballots). */
+  aims?: Record<string, string>;
   onSelect: (id: string) => void;
+  /** Abstain or pass the current pointing, when the action allows it. */
+  onPass?: () => void;
 };
 
 /** Owns the renderer and orchestrates the village, its puppets and the camera. */
@@ -100,6 +109,7 @@ export class Stage {
   private lastSent?: Pose;
   private hoverAt = 0;
   private hoverId?: string;
+  private focusId?: string;
   private compact = false;
   private last = 0;
   private placed = false;
@@ -188,7 +198,11 @@ export class Stage {
       this.composer.addPass(this.bloom);
       this.composer.addPass(new OutputPass());
     }
-    this.input = new Input(canvas, (x, y) => this.tap(x, y));
+    this.input = new Input(canvas, {
+      tap: (x, y) => this.tap(x, y),
+      pass: () => this.pass(),
+      command: (key) => this.command(key),
+    });
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(container);
     this.resize();
@@ -200,9 +214,6 @@ export class Stage {
 
   setState(state: SceneState) {
     this.state = state;
-    this.positions.clear();
-    for (const { player, x, z, yaw } of state.positions)
-      this.positions.set(player, { x, z, yaw });
   }
 
   private resize() {
@@ -323,17 +334,20 @@ export class Stage {
       !last ||
       Math.hypot(last.x - this.self.x, last.z - this.self.z) > 0.03 ||
       Math.abs(last.yaw - this.self.yaw) > 0.04;
-    if (!force && (time - this.sentAt < 0.2 || !changed)) return;
+    const motion = this.state.motion;
+    if (!motion) return;
+    // Called every frame, so a stop is always followed by a final report.
+    if (!force && (time - this.sentAt < motion.interval || !changed)) return;
     this.sentAt = time;
     this.lastSent = { ...this.self };
-    this.state.onMove({ ...this.self });
+    motion.send({ ...this.self });
   }
 
   private placeSelf(time: number) {
     const { index, member } = this.me();
     if (!member) return;
     const own = this.cast.ownPosition(member.id);
-    const stored = this.positions.get(member.id);
+    const stored = this.state.motion?.latest(member.id);
     const fallback = seat(index, this.state.members.length);
     const base: Pose =
       !this.placed && stored
@@ -382,7 +396,10 @@ export class Stage {
       ]);
       return;
     }
-    if (phase === this.phase) return;
+    if (phase === this.phase) {
+      if (phase === "night" && member?.alive) this.followTurn();
+      return;
+    }
     const previous = this.phase;
     this.phase = phase;
     this.director.stop();
@@ -416,6 +433,28 @@ export class Stage {
     else this.director.soften(1.8);
   }
 
+  /**
+   * During the night, a player whose turn it is to point steps out onto the
+   * square; everyone else stays home. Only this client sees the switch.
+   */
+  private followTurn() {
+    const wanted: View = this.state.aiming ? "village" : "interior";
+    if (wanted === this.view || this.director.busy) return;
+    const reduced = useControls.getState().reducedMotion;
+    this.director.play([
+      { to: () => this.desired(this.last), duration: 0.35, fade: [0, 1] },
+      {
+        cut: true,
+        to: () => {
+          this.view = wanted;
+          return this.desired(this.last);
+        },
+        duration: reduced ? 0.3 : 0.7,
+        fade: [1, 0],
+      },
+    ]);
+  }
+
   private revealVotes(votes: Record<string, string>, time: number) {
     const { members } = this.state;
     const head = (id: string) => {
@@ -435,10 +474,41 @@ export class Stage {
     this.arcs.show(pairs, time + 1.2);
   }
 
+  private get aimable() {
+    return (
+      !this.director.busy &&
+      this.view === "village" &&
+      this.state.targets.length > 0
+    );
+  }
+
   private tap(x: number, y: number) {
-    if (this.director.busy || this.view !== "village") return;
+    if (!this.aimable) return;
     const id = this.pick(x, y);
     if (id && this.state.targets.includes(id)) this.state.onSelect(id);
+  }
+
+  private pass() {
+    if (this.aimable) this.state.onPass?.();
+  }
+
+  /** Keyboard targeting: Tab walks the targets in seat order, Enter picks. */
+  private command(key: "next" | "previous" | "confirm") {
+    if (!this.aimable) return false;
+    const { targets, members } = this.state;
+    const ordered = members
+      .map((member) => member.id)
+      .filter((id) => targets.includes(id));
+    if (key === "confirm") {
+      if (!this.focusId || !ordered.includes(this.focusId)) return false;
+      this.state.onSelect(this.focusId);
+      return true;
+    }
+    const index = this.focusId ? ordered.indexOf(this.focusId) : -1;
+    const step = key === "next" ? 1 : -1;
+    this.focusId =
+      ordered[(index + step + ordered.length) % ordered.length] ?? undefined;
+    return true;
   }
 
   private pick(x: number, y: number) {
@@ -461,7 +531,12 @@ export class Stage {
       point && !this.input.dragging && this.view === "village"
         ? this.pick(point.x, point.y)
         : undefined;
-    this.hoverId = id && this.state.targets.includes(id) ? id : undefined;
+    if (id) this.focusId = undefined;
+    if (this.focusId && !this.state.targets.includes(this.focusId))
+      this.focusId = undefined;
+    const aimed = this.focusId ?? id;
+    this.hoverId =
+      aimed && this.state.targets.includes(aimed) ? aimed : undefined;
     this.renderer.domElement.style.cursor = this.hoverId
       ? "pointer"
       : this.input.dragging
@@ -558,6 +633,13 @@ export class Stage {
     );
     this.interior.setRole(state.role);
     this.interior.update(now, !outside);
+    this.positions.clear();
+    if (state.motion)
+      for (const entry of state.members) {
+        if (entry.id === state.me) continue;
+        const pose = state.motion.sample(entry.id);
+        if (pose) this.positions.set(entry.id, pose);
+      }
     this.cast.update(delta, now, {
       members: state.members,
       me: state.me,
@@ -568,6 +650,8 @@ export class Stage {
       selected: state.selected,
       pointing: !!state.selected && !!member?.alive && state.targets.length > 0,
       outcome: state.outcome,
+      awake: state.awake ?? [],
+      aims: state.aims ?? {},
     });
     this.hover(now);
     this.rings();

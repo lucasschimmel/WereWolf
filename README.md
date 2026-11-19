@@ -16,6 +16,19 @@ bun run convex:dev
 
 In a second terminal, from the repository root, run `bun run dev`. Open the Vite URL. The Convex CLI sets the frontend deployment URL in the game's local environment file. Each browser profile can hold a separate seat in the same room.
 
+### Movement relay (optional)
+
+Player movement goes through a small WebSocket relay (`apps/relay`, a Cloudflare Durable Object per room). Without it, the game falls back to Convex, which is slower. To run it locally:
+
+```sh
+cd apps/relay
+echo "RELAY_SECRET=$(openssl rand -hex 32)" > .dev.vars
+cd ../game
+npx convex env set RELAY_SECRET <same value>
+```
+
+Then add `VITE_RELAY_URL=/relay` to `apps/game/.env.local` and run `bun run relay` from the repository root next to `bun run dev`. Vite proxies `/relay` to the local relay, so phones on the LAN only need the Vite URL. To deploy: `wrangler secret put RELAY_SECRET` and `wrangler deploy` in `apps/relay`, optionally set `ALLOWED_ORIGINS`, then point `VITE_RELAY_URL` at `wss://<worker host>`.
+
 `develop` is the integration branch. Submit feature branches to `develop`. Release PRs promote `develop` to `main`.
 
 The `apps/landing` directory is reserved for the future landing page.

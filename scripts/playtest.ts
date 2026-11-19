@@ -6,6 +6,7 @@ import {
   cardFor,
   modes,
   phaseNames,
+  turnName,
 } from "../apps/game/shared/rules.ts";
 import { DevRoom, type RoomView } from "./dev-room.ts";
 
@@ -31,8 +32,10 @@ Sans commande, démarre une session interactive.
   help                       Affiche les commandes
   quit                       Quitte la CLI, conserve les faux joueurs
 
-L’hôte règle et lance sa partie dans le navigateur. Les nuits comprennent
-plusieurs étapes serveur. Utilise status après next pour voir les actions.
+L’hôte règle et lance sa partie dans le navigateur. La nuit se joue tour par
+tour (Meute, Voyante, Veilleur, cartes de l’Atelier, Sorcière, Chasseur) :
+chaque next passe au tour suivant. Seuls les joueurs du tour en cours ont une
+action ; utilise status après next pour les voir.
 `;
 const nameOf = (view: RoomView, id: string) =>
   view.members.find((member) => member.id === id)?.name ?? (id || "passe");
@@ -54,7 +57,7 @@ function showStatus(views: RoomView[], detailed: boolean) {
     ? Math.max(0, Math.ceil((match.remaining ?? match.end - Date.now()) / 1000))
     : 0;
   console.log(
-    `${first.code} · ${modes[first.settings.mode]} · ${first.members.length} joueurs · ${match ? `${phaseNames[match.phase]} · tour ${match.cycle} · ${match.remaining !== undefined ? "pause · " : ""}${seconds} s` : "Lobby"}`,
+    `${first.code} · ${modes[first.settings.mode]} · ${first.members.length} joueurs · ${match ? `${phaseNames[match.phase]}${match.turn ? ` (${turnName(match.turn, first.settings)})` : ""} · tour ${match.cycle} · ${match.remaining !== undefined ? "pause · " : ""}${seconds} s` : "Lobby"}`,
   );
   for (const view of views) {
     const member = view.members.find((entry) => entry.id === view.me);

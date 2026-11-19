@@ -1,24 +1,5 @@
-import {
-  Moon,
-  Pause,
-  Sparkles,
-  Sun,
-  Sunrise,
-  Swords,
-  Vote,
-} from "lucide-react";
+import type { ReactNode } from "react";
 import { useRef } from "react";
-import { type Phase, phaseNames } from "../../shared/rules";
-
-const icons: Partial<Record<Phase, typeof Sun>> = {
-  night: Moon,
-  dawn: Sunrise,
-  debate: Sun,
-  vote: Vote,
-  runoff: Vote,
-  dayShot: Swords,
-  intro: Sparkles,
-};
 
 export function useCountdown(
   key: string,
@@ -37,72 +18,83 @@ export function useCountdown(
   };
 }
 
-export function PhaseClock({
-  phase,
-  cycle,
+export type Tone = "day" | "night" | "pack" | "seer" | "witch" | "hunter";
+
+export type Step = { label: string; state: "done" | "now" | "next" };
+
+/**
+ * The one piece of HUD that is always there during a match: what is
+ * happening, what to do, and how long is left.
+ */
+export function Status({
+  id,
+  title,
+  detail,
   end,
   now,
   paused,
+  tone = "day",
+  steps,
+  children,
 }: {
-  phase: Phase;
-  cycle: number;
-  end: number;
+  id: string;
+  title: string;
+  detail?: string;
+  end?: number;
   now: number;
   paused?: number;
+  tone?: Tone;
+  steps?: Step[];
+  children?: ReactNode;
 }) {
-  const { seconds, progress } = useCountdown(
-    `${phase}:${cycle}:${end}`,
-    end,
-    now,
-    paused,
-  );
-  const Icon = icons[phase] ?? Sun;
-  const radius = 17;
+  const { seconds, progress } = useCountdown(id, end ?? now, now, paused);
+  const radius = 18;
   const circumference = 2 * Math.PI * radius;
-  const urgent = seconds <= 10 && phase !== "ended" && paused === undefined;
   const minutes = Math.floor(seconds / 60);
-  const label = minutes
-    ? `${minutes}:${String(seconds % 60).padStart(2, "0")}`
-    : `${seconds}`;
+  const label = `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+  const urgent = end !== undefined && seconds <= 5 && paused === undefined;
   return (
     <div
-      className={`phase-clock phase-${phase}${urgent ? " urgent" : ""}`}
+      className={`status tone-${tone}${urgent ? " urgent" : ""}`}
       role="timer"
       aria-live="off"
     >
-      <svg viewBox="0 0 40 40" aria-hidden="true">
-        <circle cx="20" cy="20" r={radius} className="track" />
-        <circle
-          cx="20"
-          cy="20"
-          r={radius}
-          className="fill"
-          strokeDasharray={circumference}
-          strokeDashoffset={circumference * (1 - progress)}
-        />
-      </svg>
-      <span className="clock-icon">
-        {paused !== undefined ? (
-          <Pause size={15} />
-        ) : (
-          <Icon size={15} strokeWidth={2} />
-        )}
+      {end !== undefined && (
+        <svg className="status-ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle cx="22" cy="22" r={radius} className="track" />
+          <circle
+            cx="22"
+            cy="22"
+            r={radius}
+            className="fill"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - progress)}
+          />
+        </svg>
+      )}
+      <span className="status-text">
+        <strong>{title}</strong>
+        {detail && <small>{detail}</small>}
       </span>
-      <span className="clock-text">
-        <strong>{phaseNames[phase]}</strong>
-        <small>
-          Tour {cycle}
-          {phase !== "ended" && (
-            <>
-              {" "}
-              ·{" "}
-              {paused !== undefined
-                ? "en pause"
-                : `${label}${minutes ? "" : " s"}`}
-            </>
-          )}
-        </small>
-      </span>
+      {steps && steps.length > 1 && (
+        <ol className="status-steps" aria-label="Ordre de la nuit">
+          {steps.map((step) => (
+            <li
+              key={step.label}
+              className={step.state}
+              aria-current={step.state === "now" ? "step" : undefined}
+            >
+              {step.label}
+            </li>
+          ))}
+        </ol>
+      )}
+      {end !== undefined && (
+        <span className="status-time">
+          {paused !== undefined ? "pause" : label}
+        </span>
+      )}
+      {children}
     </div>
   );
 }

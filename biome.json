@@ -8,7 +8,9 @@
       "!GDD.md",
       "!**/dist",
       "!**/.tanstack",
-      "!**/.codex"
+      "!**/.codex",
+      "!**/.wrangler",
+      "!**/worker-configuration.d.ts"
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2 },

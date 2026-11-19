@@ -110,8 +110,7 @@ export function cardFor(role: Role, settings: Settings) {
   const effects = {
     camp: "découvre son camp",
     protect: "protège la cible de la meute",
-    activity:
-      "découvre si la cible a agi pendant la première fenêtre de la nuit",
+    activity: "découvre si la cible a agi cette nuit, hors potions et ripostes",
   };
   const repeat = card.avoidRepeat
     ? " Change de cible chaque nuit consécutive."
@@ -207,14 +206,92 @@ export const phaseNames: Record<Phase, string> = {
 };
 export const isNight = (phase: Phase) =>
   phase === "night" || phase === "potions" || phase === "nightShot";
+
+/** Whether a dead player's role is shown to everyone (same rule as `game.view`). */
+export const revealsOnDeath = (settings: Settings) =>
+  settings.mode !== "mystery" &&
+  (settings.mode !== "workshop" || settings.reveal);
+
+/**
+ * Night turns, in play order. When roles are revealed on death, a turn whose
+ * holder is dead is skipped. In hidden modes (Mystery, Workshop without
+ * reveal) the slot is kept so the deck stays public, but a dead holder only
+ * gets a short random masked window (`maskedSeconds`), and a live holder's
+ * turn never ends before `hiddenFloorSeconds`, so timing cannot single out a
+ * role. A turn also ends early (`graceSeconds`) once its actors are done.
+ * `witch` maps to the `potions` phase; `hunter` to `nightShot`, which only runs
+ * when a hunter died during the night.
+ */
+export const turnOrder = [
+  "pack",
+  "seer",
+  "guard",
+  "custom:0",
+  "custom:1",
+] as const;
+export type ActionTurn = (typeof turnOrder)[number];
+export type NightTurn = ActionTurn | "witch" | "hunter";
+export function turnOf(role: Role): ActionTurn | undefined {
+  if (role === "wolf") return "pack";
+  return (turnOrder as readonly string[]).includes(role)
+    ? (role as ActionTurn)
+    : undefined;
+}
+export function nightTurns(roles: Iterable<Role>): ActionTurn[] {
+  const present = new Set<string>();
+  for (const role of roles) {
+    const turn = turnOf(role);
+    if (turn) present.add(turn);
+  }
+  return turnOrder.filter((turn) => present.has(turn));
+}
+export function turnSeconds(turn: NightTurn) {
+  return turn === "pack" ? 30 : turn === "hunter" ? 15 : 20;
+}
+/** Masked window bounds for a dead holder's slot in hidden modes (seconds). */
+export const maskedRange = { min: 4, max: 8 } as const;
+/** Minimum total length of a night slot in hidden modes (seconds). */
+export const hiddenFloorSeconds = 4;
+/** Pause between "everyone is done" and the end of the slot (seconds). */
+export function graceSeconds(turn: NightTurn | undefined) {
+  return turn === "seer" ? 2 : 3;
+}
+/** A whole number of seconds in `maskedRange`; `random` returns [0, 1). */
+export function maskedSeconds(random: () => number = Math.random) {
+  const { min, max } = maskedRange;
+  return min + Math.floor(random() * (max - min + 1));
+}
+/**
+ * When a slot whose actors are done should end (epoch ms): after the grace,
+ * not before `floorSeconds` since it started, never later than its original
+ * deadline.
+ */
+export function earlyEndAt(slot: {
+  now: number;
+  started: number;
+  deadline: number;
+  graceSeconds: number;
+  floorSeconds: number;
+}) {
+  const wanted = Math.max(
+    slot.now + slot.graceSeconds * 1000,
+    slot.started + slot.floorSeconds * 1000,
+  );
+  return Math.min(slot.deadline, wanted);
+}
+export function turnName(turn: NightTurn, settings: Settings) {
+  if (turn === "pack") return "La Meute";
+  if (turn === "hunter") return cards.hunter.name;
+  return cardFor(turn, settings).name;
+}
 export function secondsFor(phase: Phase, count: number, mode: Mode) {
   const express = mode === "express";
   const small = count <= 10;
   return {
     intro: 45,
-    night: 35,
-    potions: 25,
-    nightShot: 15,
+    night: turnSeconds("seer"),
+    potions: turnSeconds("witch"),
+    nightShot: turnSeconds("hunter"),
     dawn: 10,
     debate: express ? (small ? 75 : 100) : small ? 150 : 180,
     vote: express ? 20 : 30,

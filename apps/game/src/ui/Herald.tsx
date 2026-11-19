@@ -6,6 +6,7 @@ import {
   type Settings,
 } from "../../shared/rules";
 import type { MatchView, View } from "../rooms/model";
+import { accentOf, CardBack, RoleCard } from "./cards";
 
 type Tone = "night" | "day" | "blood" | "gold" | "calm";
 export type Proclamation = {
@@ -14,6 +15,8 @@ export type Proclamation = {
   title: string;
   detail?: string;
   tone: Tone;
+  /** A revealed card shown under the announcement (a death at dawn). */
+  role?: Role;
 };
 
 const headlines: Partial<
@@ -51,6 +54,9 @@ const headlines: Partial<
     tone: "blood",
   }),
 };
+
+/** How long an announcement stays up; a revealed card needs longer. */
+const shown = (item: Proclamation) => (item.role ? 5200 : 3400);
 
 function tally(votes: Record<string, string>) {
   const counts = new Map<string, number>();
@@ -144,9 +150,10 @@ export function useHerald(
               ? `${name(id)} ne s’est pas réveillé·e`
               : `${name(id)} est éliminé·e`,
             detail: revealed
-              ? `C’était : ${cardFor(revealed, settings).name}`
+              ? `Sa carte se retourne : ${cardFor(revealed, settings).name}`
               : "Sa carte reste secrète.",
             tone: "blood",
+            role: revealed,
           });
         }
       }
@@ -155,31 +162,48 @@ export function useHerald(
     if (additions.length) setQueue((current) => [...current, ...additions]);
   }, [match, members, settings]);
 
-  const live = queue.filter((item) => item.at <= now && now - item.at < 3400);
+  const live = queue.filter(
+    (item) => item.at <= now && now - item.at < shown(item),
+  );
   useEffect(() => {
-    if (queue.some((item) => now - item.at >= 3400))
-      setQueue((current) => current.filter((item) => now - item.at < 3400));
+    if (queue.some((item) => now - item.at >= shown(item)))
+      setQueue((current) =>
+        current.filter((item) => now - item.at < shown(item)),
+      );
   }, [now, queue]);
   return live.at(-1);
 }
 
-export function Herald({ item }: { item?: Proclamation }) {
+/** A short announcement over the scene; deaths turn their card face up. */
+export function Herald({
+  item,
+  settings,
+}: {
+  item?: Proclamation;
+  settings?: Settings;
+}) {
   if (!item) return null;
   return (
     <div
-      className={`herald tone-${item.tone}`}
+      className={`herald tone-${item.tone}${item.role ? " with-card" : ""}`}
       key={item.id}
       role="status"
       aria-live="polite"
     >
-      <span className="herald-rule" aria-hidden="true" />
       <h2>{item.title}</h2>
+      {item.role && settings && (
+        <RoleCard
+          kind={item.role}
+          settings={settings}
+          className="herald-card"
+        />
+      )}
       {item.detail && <p>{item.detail}</p>}
-      <span className="herald-rule" aria-hidden="true" />
     </div>
   );
 }
 
+/** Full-screen reveal of the player's own card, then it goes to the hand. */
 export function RoleReveal({
   role,
   settings,
@@ -189,11 +213,16 @@ export function RoleReveal({
   role: Role;
   settings: Settings;
   onClose: () => void;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   useEffect(() => {
-    const timer = window.setTimeout(onClose, 7000);
-    return () => window.clearTimeout(timer);
+    const timer = window.setTimeout(onClose, 8000);
+    const close = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    window.addEventListener("keydown", close);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", close);
+    };
   }, [onClose]);
   const card = cardFor(role, settings);
   return (
@@ -205,16 +234,19 @@ export function RoleReveal({
       <button
         type="button"
         className="reveal-backdrop"
-        aria-label="Fermer"
+        aria-label="Garder ta carte en main"
         onClick={onClose}
       />
-      <div className="reveal-card">
-        <p className="reveal-kicker">Tu es</p>
-        {children}
-        <button type="button" className="ghost" onClick={onClose}>
-          Garder le secret
-        </button>
+      <p className="reveal-kicker" style={{ color: accentOf(role) }}>
+        Tu es
+      </p>
+      <div className="reveal-stack">
+        <CardBack className="reveal-ghost left" />
+        <CardBack className="reveal-ghost right" />
+        <RoleCard kind={role} settings={settings} className="reveal-card" />
       </div>
+      <div className="reveal-notes">{children}</div>
+      <p className="reveal-hint">Clique pour garder ta carte en main</p>
     </div>
   );
 }

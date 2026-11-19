@@ -11,7 +11,17 @@ import { access, fail, roomByCode, roster, validKey } from "./access";
 import { schedule } from "./phases";
 import { credentials, settings as settingsValidator } from "./validators";
 
-const admission = { key: v.string(), name: v.string() };
+const admission = {
+  key: v.string(),
+  name: v.string(),
+  character: v.optional(v.number()),
+};
+function look(character: number | undefined, fallback: number) {
+  if (character === undefined) return fallback;
+  if (!Number.isInteger(character) || !characters[character])
+    fail("Personnage invalide.");
+  return character;
+}
 const lifetime = 12 * 60 * 60 * 1000;
 const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function nickname(name: string) {
@@ -27,8 +37,9 @@ function nickname(name: string) {
 
 export const create = mutation({
   args: admission,
-  handler: async (ctx, { key, name }) => {
+  handler: async (ctx, { key, name, character }) => {
     validKey(key);
+    const chosen = look(character, 0);
     let code = "";
     for (let attempt = 0; attempt < 10; attempt++) {
       const candidate = Array.from(
@@ -50,7 +61,7 @@ export const create = mutation({
       room,
       key,
       name: nickname(name),
-      character: 0,
+      character: chosen,
       ready: false,
     });
     await ctx.db.patch(room, { host });
@@ -60,7 +71,7 @@ export const create = mutation({
 
 export const join = mutation({
   args: { ...admission, code: v.string() },
-  handler: async (ctx, { code, key, name }) => {
+  handler: async (ctx, { code, key, name, character }) => {
     validKey(key);
     const room = await roomByCode(ctx, code);
     if (!room || room.expires <= Date.now())
@@ -84,7 +95,7 @@ export const join = mutation({
       room: room._id,
       key,
       name: trimmed,
-      character: players.length % characters.length,
+      character: look(character, players.length % characters.length),
       ready: false,
     });
     return room.code;

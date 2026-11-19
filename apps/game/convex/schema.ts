@@ -1,6 +1,14 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { choices, event, outcome, phase, role, settings } from "./validators";
+import {
+  choices,
+  event,
+  nightTurn,
+  outcome,
+  phase,
+  role,
+  settings,
+} from "./validators";
 export default defineSchema({
   rooms: defineTable({
     code: v.string(),
@@ -33,9 +41,14 @@ export default defineSchema({
   matches: defineTable({
     room: v.id("rooms"),
     phase,
+    turn: v.optional(nightTurn),
     cycle: v.number(),
     revision: v.number(),
     end: v.number(),
+    /** When the current phase or night slot began (epoch ms). */
+    started: v.optional(v.number()),
+    /** The witch validated her turn, or the hunter shot or passed. */
+    done: v.optional(v.boolean()),
     settings,
     seats: v.record(
       v.string(),
