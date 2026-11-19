@@ -58,7 +58,7 @@ export const advance = internalMutation({
         break;
       case "dawnShot":
         finishDeaths(match, "Riposte du Chasseur");
-        next = "debate";
+        next = match.outcome ? "ended" : "debate";
         break;
       case "debate":
         next = "vote";
