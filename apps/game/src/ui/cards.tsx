@@ -10,6 +10,7 @@ import {
 import guardArt from "../assets/cards/guard.webp";
 import hunterArt from "../assets/cards/hunter.webp";
 import jesterArt from "../assets/cards/jester.webp";
+import littleGirlArt from "../assets/cards/little-girl.webp";
 import seerArt from "../assets/cards/seer.webp";
 import villagerArt from "../assets/cards/villager.webp";
 import witchArt from "../assets/cards/witch.webp";
@@ -20,6 +21,7 @@ const faces: Record<string, string> = {
   wolf: wolfArt,
   villager: villagerArt,
   seer: seerArt,
+  littleGirl: littleGirlArt,
   guard: guardArt,
   hunter: hunterArt,
   witch: witchArt,

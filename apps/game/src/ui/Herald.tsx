@@ -5,6 +5,7 @@ import {
   type Role,
   type Settings,
 } from "../../shared/rules";
+import mayorArt from "../assets/cards/mayor.webp";
 import type { MatchView, View } from "../rooms/model";
 import { accentOf, CardBack, RoleCard } from "./cards";
 
@@ -17,6 +18,7 @@ export type Proclamation = {
   tone: Tone;
   /** A revealed card shown under the announcement (a death at dawn). */
   role?: Role;
+  mayorElected?: true;
 };
 
 const headlines: Partial<
@@ -71,7 +73,8 @@ const headlines: Partial<
 };
 
 /** How long an announcement stays up; a revealed card needs longer. */
-const shown = (item: Proclamation) => (item.role ? 5200 : 3400);
+const shown = (item: Proclamation) =>
+  item.role || item.mayorElected ? 5200 : 3400;
 
 function tally(votes: Record<string, string>) {
   const counts = new Map<string, number>();
@@ -132,6 +135,7 @@ export function useHerald(
         push(400, {
           title: `${name(event.mayor)} devient Maire`,
           tone: "gold",
+          mayorElected: true,
         });
       } else if (event.votes) {
         const ranking = tally(event.votes);
@@ -194,7 +198,7 @@ export function useHerald(
   return live.at(-1);
 }
 
-/** A short announcement over the scene; deaths turn their card face up. */
+/** A short announcement over the scene, with a card for deaths or elections. */
 export function Herald({
   item,
   settings,
@@ -203,14 +207,25 @@ export function Herald({
   settings?: Settings;
 }) {
   if (!item) return null;
+  const hasCard = item.role || item.mayorElected;
   return (
     <div
-      className={`herald tone-${item.tone}${item.role ? " with-card" : ""}`}
+      className={`herald tone-${item.tone}${hasCard ? " with-card" : ""}`}
       key={item.id}
       role="status"
       aria-live="polite"
     >
       <h2>{item.title}</h2>
+      {item.mayorElected && (
+        <div className="tcg tcg-photo herald-card">
+          <img
+            className="tcg-face"
+            src={mayorArt}
+            alt="Fonction publique. Le Maire tranche si le second vote reste à égalité."
+            draggable={false}
+          />
+        </div>
+      )}
       {item.role && settings && (
         <RoleCard
           kind={item.role}
