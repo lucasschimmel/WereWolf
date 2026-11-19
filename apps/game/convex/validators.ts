@@ -38,8 +38,8 @@ export const phase = v.union(
   v.literal("intro"),
   v.literal("night"),
   v.literal("potions"),
-  v.literal("nightShot"),
   v.literal("dawn"),
+  v.literal("dawnShot"),
   v.literal("debate"),
   v.literal("vote"),
   v.literal("runoff"),
@@ -53,7 +53,6 @@ export const nightTurn = v.union(
   v.literal("custom:0"),
   v.literal("custom:1"),
   v.literal("witch"),
-  v.literal("hunter"),
 );
 export const outcome = v.union(
   v.literal("village"),

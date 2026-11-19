@@ -37,7 +37,6 @@ const turnTones: Partial<Record<NightTurn, Tone>> = {
   pack: "pack",
   seer: "seer",
   witch: "witch",
-  hunter: "hunter",
 };
 
 const shortName = (turn: NightTurn, settings: Settings) =>
@@ -46,7 +45,7 @@ const shortName = (turn: NightTurn, settings: Settings) =>
 /**
  * The night's slots in play order, from the publicly dealt deck. When roles
  * are revealed on death, slots whose holder is known dead are left out. The
- * hunter has no slot here: it only appears when a hunter died that night.
+ * hunter has no night slot: his shot happens at dawn, once the deaths are known.
  */
 export function nightSteps(room: View, match: MatchView): Step[] {
   let deck: ReturnType<typeof deckFor>;
@@ -58,7 +57,6 @@ export function nightSteps(room: View, match: MatchView): Step[] {
   }
   const turns: NightTurn[] = [...nightTurns(deck)];
   if (deck.includes("witch")) turns.push("witch");
-  if (match.turn === "hunter") turns.push("hunter");
   const known = revealsOnDeath(room.settings)
     ? new Set(
         room.members
@@ -132,6 +130,7 @@ export function statusFor({
           ? `Seulement entre les ex æquo${echo}`
           : (watching ?? "Seulement entre les ex æquo"),
       };
+    case "dawnShot":
     case "dayShot":
       return {
         title: "Le Chasseur riposte",

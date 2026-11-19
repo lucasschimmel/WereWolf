@@ -11,6 +11,7 @@ export const seatPhases = new Set<Phase>([
   "vote",
   "runoff",
   "dayShot",
+  "dawnShot",
   "ended",
   "night",
 ]);
@@ -223,6 +224,7 @@ export function transition(
       return [{ to: cue.pose, duration: 2, arc: 3 }];
     case "runoff":
     case "dayShot":
+    case "dawnShot":
       return [...verdict, { to: cue.pose, duration: 1.5 }];
     case "ended":
       return [...verdict, { to: cue.pose, duration: 3, arc: 4 }];

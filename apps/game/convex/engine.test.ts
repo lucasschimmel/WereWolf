@@ -186,26 +186,53 @@ describe("turn-by-turn nights", () => {
     expect(durationOf(match)).toBe(turnSeconds("seer"));
   });
 
-  test("the hunter's night shot only runs when a hunter died that night", () => {
-    const quiet = scenario();
-    expect(playNight(quiet)).not.toContain("nightShot:hunter");
-    const struck = scenario();
-    struck.night = { wolf: "hunter", lone: "hunter" };
-    expect(playNight(struck)).toEqual([
+  test("a hunter killed at night gets no night slot of his own", () => {
+    const match = scenario();
+    match.night = { wolf: "hunter", lone: "hunter" };
+    expect(playNight(match)).toEqual([
       "night:pack",
       "night:seer",
       "night:guard",
       "potions:witch",
-      "nightShot:hunter",
       "dawn:",
     ]);
   });
 
-  test("a hunter killed at night is announced at dawn", () => {
+  test("a hunter killed at night is announced at dawn and keeps his shot pending", () => {
     const match = scenario();
     match.night = { wolf: "hunter", lone: "hunter" };
     playNight(match);
     expect(match.events.at(-1)?.deaths).toEqual(["hunter"]);
+    expect(match.hunter).toBe("hunter");
+  });
+
+  test("the dawn shot adds its victim in a separate announcement", () => {
+    const match = scenario();
+    match.night = { wolf: "hunter", lone: "hunter" };
+    playNight(match);
+    match.shot = "wolf";
+    finishDeaths(match, "Riposte du Chasseur");
+    expect(match.events.at(-1)?.deaths).toEqual(["wolf"]);
+    expect(match.hunter).toBe("");
+  });
+
+  test("without a hunter among the dead, the night is settled at dawn", () => {
+    const match = scenario();
+    match.night = { wolf: "seer", lone: "seer" };
+    playNight(match);
+    expect(match.hunter).toBe("");
+  });
+
+  test("the outcome waits for the dawn shot", () => {
+    const match = scenario();
+    match.seats.hunter.alive = false;
+    match.hunter = "hunter";
+    match.deaths = ["hunter"];
+    match.phase = "potions";
+    match.turn = "witch";
+    for (const id of ["wolf", "lone"]) match.seats[id].alive = false;
+    advanceNight(match);
+    expect(match.outcome).toBeUndefined();
   });
 
   test("skips the potion slot when no witch was dealt", () => {

@@ -23,11 +23,11 @@ export const hasWitch = (match: Match) => dealt(match, "witch");
 export const deckTurns = (match: Match) =>
   nightTurns(Object.values(match.seats).map((seat) => seat.role));
 
-/** Living seats whose card owns `turn`. The hunter's shot has no night holder. */
+/** Living seats whose card owns `turn`. */
 export function turnHolders(match: Match, turn: NightTurn) {
   return alive(match).filter((id) => {
     const role = match.seats[id].role;
-    return turn === "hunter" ? false : turnOf(role) === turn || role === turn;
+    return turnOf(role) === turn || role === turn;
   });
 }
 export const holderAlive = (match: Match, turn: NightTurn) =>
@@ -64,7 +64,7 @@ export function isTurnComplete(match: Match): boolean {
     }
     case "potions":
       return holderAlive(match, "witch") && match.done === true;
-    case "nightShot":
+    case "dawnShot":
     case "dayShot":
       return !!match.hunter && match.done === true;
     case "vote":
@@ -158,8 +158,8 @@ export function firstWindow(match: Match) {
 
 /**
  * Closes the current night slot and returns the next phase. Action turns run
- * in `nightOrder`, then the witch (`potions`). The hunter's `nightShot` only
- * runs when a hunter died during the night (`match.hunter`), like `dayShot`.
+ * in `nightOrder`, then the witch (`potions`). The night's deaths are announced
+ * at dawn; if a hunter is among them, his shot (`dawnShot`) follows the dawn.
  */
 export function advanceNight(match: Match): Phase {
   if (match.phase === "night" || match.phase === "potions") {
@@ -175,12 +175,8 @@ export function advanceNight(match: Match): Phase {
       return "potions";
     }
     resolvePotions(match);
-    if (match.hunter) {
-      match.turn = "hunter";
-      return "nightShot";
-    }
   }
-  finishDeaths(match, "À l’aube");
+  announceDeaths(match, "À l’aube");
   match.turn = undefined;
   return "dawn";
 }
@@ -207,6 +203,15 @@ export function resolvePotions(match: Match) {
     votes: potionChoices,
   });
   kill(match, [match.heal ? skip : match.attack, match.poison]);
+}
+/**
+ * Publishes the pending deaths. When a hunter is among them his shot is still
+ * to come, so `match.hunter` is kept and the outcome is left to `finishDeaths`.
+ */
+export function announceDeaths(match: Match, label: string) {
+  if (!match.hunter) return finishDeaths(match, label);
+  match.events.push({ cycle: match.cycle, label, deaths: [...match.deaths] });
+  match.deaths = [];
 }
 export function finishDeaths(match: Match, label: string) {
   if (match.shot)

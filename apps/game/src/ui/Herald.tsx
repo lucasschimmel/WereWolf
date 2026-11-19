@@ -53,6 +53,11 @@ const headlines: Partial<
     detail: "Un dernier tir avant de tomber.",
     tone: "blood",
   }),
+  dawnShot: () => ({
+    title: "Le Chasseur riposte",
+    detail: "Un dernier tir avant de tomber.",
+    tone: "blood",
+  }),
 };
 
 /** How long an announcement stays up; a revealed card needs longer. */

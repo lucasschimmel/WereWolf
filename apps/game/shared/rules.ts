@@ -184,8 +184,8 @@ export type Phase =
   | "intro"
   | "night"
   | "potions"
-  | "nightShot"
   | "dawn"
+  | "dawnShot"
   | "debate"
   | "vote"
   | "runoff"
@@ -196,8 +196,8 @@ export const phaseNames: Record<Phase, string> = {
   intro: "Distribution",
   night: "Nuit",
   potions: "Nuit",
-  nightShot: "Nuit",
   dawn: "Aube",
+  dawnShot: "Riposte",
   debate: "Débat",
   vote: "Vote",
   runoff: "Départage",
@@ -205,7 +205,7 @@ export const phaseNames: Record<Phase, string> = {
   ended: "Fin de partie",
 };
 export const isNight = (phase: Phase) =>
-  phase === "night" || phase === "potions" || phase === "nightShot";
+  phase === "night" || phase === "potions";
 
 /** Whether a dead player's role is shown to everyone (same rule as `game.view`). */
 export const revealsOnDeath = (settings: Settings) =>
@@ -219,8 +219,9 @@ export const revealsOnDeath = (settings: Settings) =>
  * gets a short random masked window (`maskedSeconds`), and a live holder's
  * turn never ends before `hiddenFloorSeconds`, so timing cannot single out a
  * role. A turn also ends early (`graceSeconds`) once its actors are done.
- * `witch` maps to the `potions` phase; `hunter` to `nightShot`, which only runs
- * when a hunter died during the night.
+ * `witch` maps to the `potions` phase. The hunter has no night slot: if he died
+ * during the night, his shot is the `dawnShot` phase right after the dawn
+ * announcement.
  */
 export const turnOrder = [
   "pack",
@@ -230,7 +231,7 @@ export const turnOrder = [
   "custom:1",
 ] as const;
 export type ActionTurn = (typeof turnOrder)[number];
-export type NightTurn = ActionTurn | "witch" | "hunter";
+export type NightTurn = ActionTurn | "witch";
 export function turnOf(role: Role): ActionTurn | undefined {
   if (role === "wolf") return "pack";
   return (turnOrder as readonly string[]).includes(role)
@@ -246,7 +247,7 @@ export function nightTurns(roles: Iterable<Role>): ActionTurn[] {
   return turnOrder.filter((turn) => present.has(turn));
 }
 export function turnSeconds(turn: NightTurn) {
-  return turn === "pack" ? 30 : turn === "hunter" ? 15 : 20;
+  return turn === "pack" ? 30 : 20;
 }
 /** Masked window bounds for a dead holder's slot in hidden modes (seconds). */
 export const maskedRange = { min: 4, max: 8 } as const;
@@ -281,7 +282,6 @@ export function earlyEndAt(slot: {
 }
 export function turnName(turn: NightTurn, settings: Settings) {
   if (turn === "pack") return "La Meute";
-  if (turn === "hunter") return cards.hunter.name;
   return cardFor(turn, settings).name;
 }
 export function secondsFor(phase: Phase, count: number, mode: Mode) {
@@ -291,8 +291,8 @@ export function secondsFor(phase: Phase, count: number, mode: Mode) {
     intro: 45,
     night: turnSeconds("seer"),
     potions: turnSeconds("witch"),
-    nightShot: turnSeconds("hunter"),
     dawn: 10,
+    dawnShot: 15,
     debate: express ? (small ? 75 : 100) : small ? 150 : 180,
     vote: express ? 20 : 30,
     runoff: express ? 15 : 20,

@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| Status | Open — investigation only, **no code was changed** |
+| Status | Findings 2a, 2b, 3, 4, 5, 6 implemented (see the resolution sections); finding 1 (mobile) open. The analysis below was written before any code change. |
 | Branch / commit | `feat/tcg-redesign` (working tree on top of `da33ae7`) |
 | Source | Manual playtest by the maintainer, 6 findings (listed below) |
 | Method | Static code reading of `apps/game/{convex,shared,src}`, `specs/game.md`, `GDD.md`. Nothing was reproduced live, so every latency figure is an **estimate from the code**, to be confirmed with the measurements in the last section. |
@@ -268,6 +268,6 @@ Implemented on `feat/tcg-redesign` (policy A from the table above):
 
 - **4 — dead roles:** when roles are revealed on death, a dead holder's turn is skipped (`nightOrder`). In Mystery and Workshop without reveal, the slot is kept but is a masked random 4–8 s window (`durationOf`, `maskedSeconds`).
 - **5 — early advance:** `isTurnComplete` + `settleEarly` end a slot after a 3 s grace (2 s for the seer) once its actors are done. The witch has an explicit "Valider" (`choose` action `done`). Hidden modes enforce a 4 s floor per night slot. Debate, intro, dawn and paused matches are unaffected.
-- **6 — hunter:** `nightShot` only runs when a hunter died during the night. The hunter no longer has a permanent slot in the HUD night steps.
+- **6 — hunter:** the hunter has no night slot at all. Night deaths are announced at dawn, then a `dawnShot` phase (15 s, early end after the shot) runs before the debate if a hunter died.
 
-Not done: the "strict secrecy" lobby option (policy C). Known residual leak in hidden modes: a live holder's turn can last up to 20 s while a dead holder's is 4–8 s, and a conditional `nightShot` reveals that a hunter died.
+Not done: the "strict secrecy" lobby option (policy C). Known residual leak in hidden modes, accepted: a live holder's turn can last up to 20 s while a dead holder's is 4–8 s. The hunter no longer leaks through the night (his shot follows the public announcement of deaths).

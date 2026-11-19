@@ -51,10 +51,13 @@ export const advance = internalMutation({
         break;
       case "night":
       case "potions":
-      case "nightShot":
         next = advanceNight(match);
         break;
       case "dawn":
+        next = match.hunter ? "dawnShot" : "debate";
+        break;
+      case "dawnShot":
+        finishDeaths(match, "Riposte du Chasseur");
         next = "debate";
         break;
       case "debate":
@@ -112,9 +115,7 @@ export const advance = internalMutation({
 export function durationOf(match: Match, random: () => number = Math.random) {
   if (isNight(match.phase) && match.turn) {
     const masked =
-      match.turn !== "hunter" &&
-      !revealsOnDeath(match.settings) &&
-      !holderAlive(match, match.turn);
+      !revealsOnDeath(match.settings) && !holderAlive(match, match.turn);
     return masked ? maskedSeconds(random) : turnSeconds(match.turn);
   }
   return secondsFor(
@@ -127,7 +128,7 @@ export function durationOf(match: Match, random: () => number = Math.random) {
 const earlyPhases: ReadonlySet<Phase> = new Set([
   "night",
   "potions",
-  "nightShot",
+  "dawnShot",
   "vote",
   "runoff",
   "dayShot",

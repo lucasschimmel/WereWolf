@@ -47,7 +47,7 @@ export const view = query({
     const ballot =
       seat.alive && (match.phase === "vote" || match.phase === "runoff");
     const shooting =
-      (match.phase === "dayShot" || match.phase === "nightShot") &&
+      (match.phase === "dayShot" || match.phase === "dawnShot") &&
       match.hunter === player._id;
     const witch =
       match.phase === "potions" && seat.alive && seat.role === "witch";
@@ -143,7 +143,7 @@ export const choose = mutation({
     const seat = match.seats[id];
     if (action === "shot") {
       if (
-        (match.phase !== "dayShot" && match.phase !== "nightShot") ||
+        (match.phase !== "dayShot" && match.phase !== "dawnShot") ||
         match.hunter !== id ||
         (target && !match.seats[target]?.alive)
       )

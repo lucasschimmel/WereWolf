@@ -22,18 +22,26 @@ Le journal public affiche les changements de phase, les résultats de scrutin et
 | Moment | Durée proposée | Décision |
 |---|---:|---|
 | Découverte et salutations | 45 s | Lecture privée de sa carte, courte prise de parole libre sur Discord |
-| Nuit | Meute 30 s, puis 20 s par carte d’action du paquet, Sorcière 20 s, Chasseur 15 s | Tour par tour selon l’ordre ci-dessous |
+| Nuit | Au plus : Meute 30 s, puis 20 s par carte d’action du paquet, Sorcière 20 s | Tour par tour selon l’ordre ci-dessous. Un tour s’achève peu après que tous ses acteurs ont joué |
 | Aube | 10 s | Le village découvre les morts et, par défaut, leurs cartes |
+| Riposte de l’aube | Au plus 15 s | Seulement si le Chasseur est mort pendant la nuit. S’achève peu après son tir ou son renoncement |
 | Débat | 150 s jusqu’à 10 joueurs, 180 s dès 11 | Discussion libre sur Discord |
-| Vote | 30 s | Choix secret et modifiable jusqu’à clôture |
-| Départage éventuel | 20 s | Second scrutin entre les premiers ex æquo |
-| Riposte éventuelle | 15 s par joueur concerné | Choix privé du Chasseur, s’il est présent |
+| Vote | Au plus 30 s | Choix public en direct, modifiable jusqu’à clôture. Le vote s’achève peu après que tous les vivants ont voté ou se sont abstenus |
+| Départage éventuel | Au plus 20 s | Second scrutin public entre les premiers ex æquo, même règle de clôture |
+| Riposte éventuelle | Au plus 15 s par joueur concerné | Choix du Chasseur, s’il est présent. S’achève peu après son tir ou son renoncement |
 
-**Vote du village.** Chaque vivant peut voter pour un autre vivant ou s’abstenir. À la clôture, le jeu publie les bulletins et les totaux. Le premier au nombre de voix est éliminé. En cas d’égalité en tête, tous les vivants revotent entre les ex æquo avec la même règle d’auto-vote. Nouvelle égalité ou aucun suffrage valide : personne ne sort. L’absence de réponse vaut abstention. La partie commence par une nuit après les salutations.
+**Vote du village.** Chaque vivant peut voter pour un autre vivant ou s’abstenir. Les bulletins sont **publics en direct**, comme des mains levées : pendant le vote et le départage, chaque votant pointe sa cible du bras dans la scène, et tout le monde le voit. Les abstentions ne s’affichent pas. Chacun peut changer d’avis jusqu’à la clôture, qui tombe à la fin du temps ou 3 s après que tous les vivants ont voté ou se sont abstenus. À la clôture, le jeu publie les bulletins et les totaux dans le journal. Le premier au nombre de voix est éliminé. En cas d’égalité en tête, tous les vivants revotent entre les ex æquo avec la même règle d’auto-vote. Nouvelle égalité ou aucun suffrage valide : personne ne sort. L’absence de réponse vaut abstention. La partie commence par une nuit après les salutations.
 
 **Vote de la meute.** Les loups connaissent leurs partenaires et voient leurs bulletins de nuit en direct. Chaque loup peut voter pour un vivant hors meute, modifier son choix ou s’abstenir. La cible avec le plus de voix est retenue. Une égalité en tête ou zéro voix annule l’attaque. Ce panneau constitue leur moyen de coordination nocturne.
 
-**Ordre nocturne.** La nuit enchaîne un tour par carte d’action présente dans le paquet : la Meute (30 s), la Voyante, le Veilleur, puis les cartes de l’Atelier (20 s chacune). Pendant un tour, seuls ses détenteurs vivants agissent. La Voyante découvre le camp de sa cible aussitôt son choix fait, et ce choix est définitif. À la fin du dernier tour d’action, le jeu verrouille les cibles et applique la protection. Vient ensuite le tour de la Sorcière (20 s) : elle voit la victime provisoire, si l’attaque reste fatale, verse le remède en un clic et sort sur la place pour pointer la cible de son poison. Le jeu applique le soin, puis le poison, regroupe les décès, puis ouvre le tour du Chasseur (15 s) avant de publier l’aube. **Chaque tour d’une carte distribuée s’écoule en entier, même si son détenteur est mort, a déjà joué ou n’a plus d’usage.** Seul le paquet distribué, qui est public, détermine la durée de la nuit, si bien que le chronomètre ne révèle jamais qui est encore en vie. Les paquets proposés contiennent au plus un Chasseur, donc la résolution comporte au plus une riposte.
+**Ordre nocturne.** La nuit enchaîne un tour par carte d’action présente dans le paquet : la Meute (30 s), la Voyante, le Veilleur, puis les cartes de l’Atelier (20 s chacune). Pendant un tour, seuls ses détenteurs vivants agissent. La Voyante découvre le camp de sa cible aussitôt son choix fait, et ce choix est définitif. À la fin du dernier tour d’action, le jeu verrouille les cibles et applique la protection. Vient ensuite le tour de la Sorcière (20 s) : elle voit la victime provisoire, si l’attaque reste fatale, verse le remède en un clic, sort sur la place pour pointer la cible de son poison, puis **valide** son tour. Le jeu applique le soin, puis le poison, et regroupe les décès. La nuit s’arrête là : le Chasseur n’a pas de tour nocturne. L’aube annonce les morts ; si le Chasseur en fait partie, il riposte juste après l’annonce (15 s), puis le débat commence. Les paquets proposés contiennent au plus un Chasseur, donc la résolution comporte au plus une riposte.
+
+**Durée des tours.** Chaque durée ci-dessus est un maximum. Dès que tous les détenteurs vivants d’un tour ont joué (choix, abstention ou validation de la Sorcière), le tour se termine après un court délai : 2 s pour la Voyante, 3 s pour les autres. Le traitement des cartes dont le détenteur est mort dépend du mode :
+
+- **Cartes révélées à la mort** (Classique, Express, Chaos, Atelier avec révélation) : le tour est sauté. La mort du détenteur et sa carte sont déjà publiques, donc l’absence du tour ne révèle rien.
+- **Cartes cachées** (Mystère, Atelier sans révélation) : le tour est conservé, car le paquet est public, mais il ne dure qu’une fenêtre aléatoire de 4 à 8 s. Un tour joué par un détenteur vivant ne se termine jamais avant 4 s. Un détenteur rapide et une carte orpheline sont ainsi indiscernables.
+
+Limite assumée en cartes cachées : un tour qui dure plus de 8 s trahit un détenteur vivant. Le Chasseur ne fuit plus par la nuit : sa riposte n’a lieu qu’après l’annonce des morts.
 
 **Décès.** Deux effets sur la même personne ne produisent qu’une élimination. Le Chasseur choisit parmi les vivants après le lot de décès qui l’a éliminé. Un délai expiré annule le tir. Le journal révèle les victimes et leurs cartes selon le mode. Les cibles sauvées, les rôles ayant agi et les causes privées restent secrets jusqu’à la fin.
 
@@ -80,7 +88,7 @@ Un seul mode est actif pour une partie. Les joueurs voient les modifications de 
 
 | Mode | 8–9 | 10–11 | 12–15 | Règles |
 |---|---|---|---|---|
-| Classique | Oui | Oui | Oui | Composition standard, cartes révélées à la mort, bulletins de jour publics après clôture. |
+| Classique | Oui | Oui | Oui | Composition standard, cartes révélées à la mort, bulletins de jour publics en direct. |
 | Express | Oui | Oui | Oui | Même composition. Débat de 75 s jusqu’à 10, 100 s dès 11, vote de 20 s, départage de 15 s. Nuit identique au Classique. |
 | Mystère | Indisponible | Oui | Oui | Même composition. L’annonce publique indique les morts. Leurs cartes restent secrètes jusqu’au tableau final. |
 | Chaos | Indisponible | Indisponible | Oui | Remplace un Villageois simple par le Bouffon. Révélation et rythme du Classique. |
@@ -119,4 +127,4 @@ Créer une carte consiste à remplir une fiche et choisir un effet dans une list
 | 13–15 | Grande table, puis un essai Chaos à 12 ou plus | Les pseudonymes restent lisibles. Les joueurs suivent les votes. Le Bouffon crée un doute sans monopoliser les débats. |
 | 8–15 | Essai Atelier et cas d’arbitrage | Vérifier qu’une carte se comprend à la lecture, qu’une égalité ou une déconnexion se résout et que soin, poison et riposte produisent un résultat explicable au tableau final. |
 
-Après chaque partie, relever les durées par phase, le premier tour d’élimination, les égalités, les victoires et les moments où les joueurs ont dû demander une règle. Les choix à valider avant de passer à la suite sont le **village avec déplacements libres le jour**, la **révélation des cartes et des bulletins en Classique**, les **paliers de loups à 10 et 14**, et la **création de cartes par effets composables**.
+Après chaque partie, relever les durées par phase, le premier tour d’élimination, les égalités, les victoires et les moments où les joueurs ont dû demander une règle. Les choix à valider avant de passer à la suite sont le **village avec déplacements libres le jour**, la **révélation des cartes en Classique**, les **bulletins publics en direct** (effet de suivisme, avantage aux derniers votants), les **paliers de loups à 10 et 14**, et la **création de cartes par effets composables**.
