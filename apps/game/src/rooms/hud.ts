@@ -23,6 +23,17 @@ export const instructions: Record<Action, string> = {
   poison: "Poison · pointe ta cible · clic droit pour annuler",
 };
 
+/** The same instructions for a finger: tap a puppet or use the list. */
+export const touchInstructions: Record<Action, string> = {
+  vote: "Touche quelqu’un ou choisis dans la liste",
+  shot: "Ta dernière flèche · choisis un vivant",
+  wolf: "Choisissez votre proie ensemble · égalité : pas d’attaque",
+  inspect: "Choisis quelqu’un pour découvrir son camp",
+  protect: "Choisis la personne à protéger de la meute",
+  activity: "Choisis quelqu’un pour savoir s’il a agi cette nuit",
+  poison: "Poison · choisis ta cible",
+};
+
 export const passLabels: Record<Action, string> = {
   vote: "S’abstenir",
   shot: "Ne pas tirer",
@@ -82,6 +93,8 @@ type Situation = {
   alive: boolean;
   aiming: Action | undefined;
   witchTurn: boolean;
+  /** Touch device: instructions talk about tapping, not clicking. */
+  touch?: boolean;
 };
 
 /** The status line: a title, what to do now, and the colour of the moment. */
@@ -91,10 +104,12 @@ export function statusFor({
   alive,
   aiming,
   witchTurn,
+  touch = false,
 }: Situation) {
   const name = (id?: string) =>
     room.members.find((member) => member.id === id)?.name;
   const choice = match.selected ? name(match.selected) : undefined;
+  const said = touch ? touchInstructions : instructions;
   const echo = choice ? ` · ton choix : ${choice}` : "";
   const watching = alive ? undefined : "Tu observes en silence";
   switch (match.phase) {
@@ -104,8 +119,7 @@ export function statusFor({
       const turn = match.turn;
       const title = `Nuit ${match.cycle}${turn ? ` · ${shortName(turn, room.settings)}` : ""}`;
       const tone = (turn && turnTones[turn]) ?? "night";
-      if (aiming)
-        return { title, tone, detail: `${instructions[aiming]}${echo}` };
+      if (aiming) return { title, tone, detail: `${said[aiming]}${echo}` };
       if (witchTurn) return { title, tone, detail: "C’est ton tour" };
       if (match.action === "inspect" && match.selected)
         return { title, tone, detail: `Ta vision est faite · ${choice}` };
@@ -121,7 +135,7 @@ export function statusFor({
     case "vote":
       return {
         title: "Le village vote",
-        detail: aiming ? `${instructions.vote}${echo}` : watching,
+        detail: aiming ? `${said.vote}${echo}` : watching,
       };
     case "runoff":
       return {
@@ -135,7 +149,7 @@ export function statusFor({
       return {
         title: "Le Chasseur riposte",
         tone: "hunter" as Tone,
-        detail: aiming ? `${instructions.shot}${echo}` : "Il choisit sa cible…",
+        detail: aiming ? `${said.shot}${echo}` : "Il choisit sa cible…",
       };
     default:
       return { title: "Fin de partie" };

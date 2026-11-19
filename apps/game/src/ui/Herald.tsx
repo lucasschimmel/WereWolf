@@ -213,11 +213,13 @@ export function RoleReveal({
   role,
   settings,
   onClose,
+  touch = false,
   children,
 }: {
   role: Role;
   settings: Settings;
   onClose: () => void;
+  touch?: boolean;
   children?: ReactNode;
 }) {
   useEffect(() => {
@@ -251,7 +253,9 @@ export function RoleReveal({
         <RoleCard kind={role} settings={settings} className="reveal-card" />
       </div>
       <div className="reveal-notes">{children}</div>
-      <p className="reveal-hint">Clique pour garder ta carte en main</p>
+      <p className="reveal-hint">
+        {touch ? "Touche" : "Clique"} pour garder ta carte en main
+      </p>
     </div>
   );
 }

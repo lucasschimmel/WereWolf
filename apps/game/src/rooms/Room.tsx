@@ -18,6 +18,7 @@ import type { SceneState } from "../scene/Village";
 import { type Credentials, errorMessage } from "../session";
 import { RoleCard } from "../ui/cards";
 import { Drawer, Joystick, SettingsPanel } from "../ui/controls";
+import { useCoarse } from "../ui/device";
 import { Herald, RoleReveal, useHerald } from "../ui/Herald";
 import { Status } from "../ui/PhaseClock";
 import {
@@ -31,6 +32,7 @@ import { Journal, Roster } from "./Ledger";
 import { Lobby } from "./Lobby";
 import type { MatchView } from "./model";
 import { EndScreen, Vision, WitchTurn } from "./Overlays";
+import { RotatePrompt, TargetPicker } from "./Picker";
 
 const Village = lazy(() => import("../scene/Village"));
 type Panel = "roster" | "journal" | "settings" | null;
@@ -111,18 +113,6 @@ function useNow(interval = 250) {
     return () => window.clearInterval(timer);
   }, [interval]);
   return now;
-}
-
-function useCoarse() {
-  const [coarse, setCoarse] = useState(false);
-  useEffect(() => {
-    const query = window.matchMedia("(pointer: coarse)");
-    setCoarse(query.matches);
-    const change = () => setCoarse(query.matches);
-    query.addEventListener("change", change);
-    return () => query.removeEventListener("change", change);
-  }, []);
-  return coarse;
 }
 
 type Pointing = {
@@ -340,6 +330,7 @@ function RoomContent({
         alive: me.alive,
         aiming: pointAction,
         witchTurn,
+        touch: coarse,
       })
     : undefined;
   const ended = match?.phase === "ended";
@@ -450,12 +441,24 @@ function RoomContent({
           />
         )}
 
-        {pointAction && pointing.targets.length > 0 && (
-          <button type="button" className="chip pass" onClick={onPass}>
-            {passLabels[pointAction]}
-            <small> · clic droit</small>
-          </button>
-        )}
+        {pointAction &&
+          pointing.targets.length > 0 &&
+          (coarse ? (
+            <TargetPicker
+              room={room}
+              targets={pointing.targets}
+              selected={pointing.selected}
+              ballots={pointAction === "wolf" ? match?.wolves : match?.ballots}
+              passLabel={passLabels[pointAction]}
+              onSelect={onSelect}
+              onPass={onPass}
+            />
+          ) : (
+            <button type="button" className="chip pass" onClick={onPass}>
+              {passLabels[pointAction]}
+              <small> · clic droit</small>
+            </button>
+          ))}
 
         {match?.potions && witchTurn && (
           <WitchTurn
@@ -555,14 +558,17 @@ function RoomContent({
         title="Réglages"
         onClose={() => setPanel(null)}
       >
-        <SettingsPanel />
+        <SettingsPanel touch={coarse} />
       </Drawer>
+
+      {coarse && <RotatePrompt />}
 
       {reveal && match && (
         <RoleReveal
           role={match.role}
           settings={room.settings}
           onClose={closeReveal}
+          touch={coarse}
         >
           {match.mates.length > 1 && (
             <p className="pack">

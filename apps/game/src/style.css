@@ -534,6 +534,11 @@ input[type="checkbox"] {
   letter-spacing: 0.14em;
 }
 
+.lobby-actions {
+  display: grid;
+  gap: 14px;
+}
+
 .deck {
   display: grid;
   gap: 8px;
@@ -1521,7 +1526,7 @@ button.tcg:hover {
 
 /* ---------- Small screens ---------- */
 
-@media (max-width: 760px) {
+@media (max-width: 760px) and (orientation: portrait) {
   :root {
     --gutter: 16px;
   }
@@ -1597,6 +1602,481 @@ button.tcg:hover {
     right: auto;
     left: var(--gutter);
     bottom: calc(var(--gutter) + var(--safe-bottom) + 150px);
+  }
+}
+
+/* ---------- Touch targeting ---------- */
+
+.picker {
+  position: absolute;
+  right: calc(var(--gutter) + var(--safe-right));
+  bottom: calc(var(--gutter) + var(--safe-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 220px;
+  max-height: calc(
+    100% -
+    2 *
+    var(--gutter) -
+    var(--safe-top) -
+    var(--safe-bottom) -
+    60px
+  );
+  padding: 8px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.picker ul {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.picker li button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: rgba(239, 230, 211, 0.06);
+  font-weight: 700;
+  text-align: left;
+}
+
+.picker li button[aria-pressed="true"] {
+  background: var(--ember);
+  color: var(--ember-ink);
+}
+
+.picker .person-dot {
+  width: 20px;
+  height: 20px;
+  border-width: 2px;
+}
+
+.picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-votes {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--pack);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.picker-pass {
+  flex: none;
+  min-height: 44px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-weight: 700;
+}
+
+/* ---------- Touch devices ---------- */
+
+.rotate {
+  display: none;
+}
+
+@keyframes tilt {
+  0%,
+  25% {
+    transform: rotate(0deg);
+  }
+  60%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (pointer: coarse) {
+  /* The left thumb walks, so the hand card moves up under the code chip. */
+  .hand {
+    top: calc(var(--gutter) + var(--safe-top) + 52px);
+    bottom: auto;
+  }
+
+  .joystick {
+    right: auto;
+    left: calc(var(--gutter) + var(--safe-left));
+    bottom: calc(var(--gutter) + var(--safe-bottom));
+  }
+}
+
+/* The village is played in landscape: a phone held upright is asked to turn. */
+@media (pointer: coarse) and (orientation: portrait) {
+  .rotate {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    padding: 24px;
+    background: var(--ink);
+    text-align: center;
+  }
+
+  .rotate > svg {
+    color: var(--ember);
+    animation: tilt 1.8s ease-in-out infinite alternate;
+  }
+
+  .rotate p {
+    color: var(--bone-dim);
+  }
+}
+
+/* ---------- Phones in landscape ---------- */
+
+@media (orientation: landscape) and (max-height: 500px) {
+  :root {
+    --gutter: 10px;
+    --radius: 12px;
+  }
+
+  .icon-button {
+    width: 38px;
+    height: 38px;
+  }
+
+  .corner-right {
+    gap: 4px;
+  }
+
+  /* In a match the code chip shrinks to its icon; tapping still invites. */
+  .corner-left {
+    justify-content: center;
+    width: 38px;
+    min-height: 38px;
+    padding: 0;
+    font-size: 0;
+    gap: 0;
+  }
+
+  .wordmark {
+    top: calc(var(--gutter) + var(--safe-top) + 10px);
+    font-size: 0.95rem;
+  }
+
+  .footnote {
+    bottom: calc(6px + var(--safe-bottom));
+    font-size: 0.8rem;
+  }
+
+  .primary,
+  .secondary {
+    min-height: 42px;
+    font-size: 0.98rem;
+  }
+
+  .panel {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .panel h2 {
+    font-size: 0.98rem;
+  }
+
+  .name-input {
+    font-size: 1.1rem;
+  }
+
+  /* Hub and lobby panels: below the top bar, scroll when content is long. */
+  .side {
+    top: calc(var(--gutter) + var(--safe-top) + 46px);
+    transform: none;
+    width: min(270px, calc(50% - 2 * var(--gutter) - 6px));
+    max-height: calc(
+      100% -
+      2 *
+      var(--gutter) -
+      var(--safe-top) -
+      var(--safe-bottom) -
+      70px
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    align-content: start;
+  }
+
+  .side.right {
+    width: min(320px, calc(50% - 2 * var(--gutter) - 6px));
+  }
+
+  .room-code {
+    font-size: 1.2rem;
+  }
+
+  /* Ready and start stay reachable while the room panel scrolls. */
+  .lobby-actions {
+    position: sticky;
+    bottom: -12px;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 8px;
+    margin: 0 -14px -12px;
+    padding: 8px 14px 12px;
+    background: #15161f;
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+
+  .lobby-actions button {
+    padding: 0 10px;
+    font-size: 0.9rem;
+  }
+
+  .status {
+    top: calc(var(--gutter) + var(--safe-top));
+    left: calc(var(--gutter) + var(--safe-left) + 46px);
+    right: calc(var(--gutter) + var(--safe-right) + 214px);
+    width: fit-content;
+    max-width: none;
+    margin-inline: auto;
+    transform: none;
+    gap: 10px;
+    padding: 4px 12px 4px 5px;
+  }
+
+  .status-ring {
+    width: 30px;
+    height: 30px;
+  }
+
+  .status-text strong {
+    font-size: 0.92rem;
+  }
+
+  .status-text strong,
+  .status-text small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status-text small {
+    font-size: 0.8rem;
+  }
+
+  .status-steps {
+    display: none;
+  }
+
+  .status-time {
+    font-size: 1.1rem;
+  }
+
+  .hand {
+    --s: 0.3;
+    top: calc(var(--gutter) + var(--safe-top) + 48px);
+  }
+
+  .joystick {
+    width: 108px;
+    height: 108px;
+  }
+
+  .picker {
+    width: 200px;
+    max-height: calc(
+      100% -
+      2 *
+      var(--gutter) -
+      var(--safe-top) -
+      var(--safe-bottom) -
+      48px
+    );
+  }
+
+  .picker li button,
+  .picker-pass {
+    min-height: 40px;
+  }
+
+  .toasts {
+    bottom: calc(var(--gutter) + var(--safe-bottom) + 8px);
+  }
+
+  .herald {
+    top: 16%;
+    gap: 8px;
+  }
+
+  .herald h2 {
+    font-size: 1.45rem;
+  }
+
+  .herald p {
+    font-size: 0.95rem;
+  }
+
+  .herald.with-card {
+    top: calc(var(--gutter) + var(--safe-top) + 44px);
+  }
+
+  .herald-card {
+    --s: 0.42;
+  }
+
+  /* Card reveal: the card on the left, the words on the right. */
+  .reveal {
+    grid-template-columns: auto minmax(0, 300px);
+    grid-template-areas:
+      "card kicker"
+      "card notes"
+      "card hint";
+    justify-content: center;
+    justify-items: start;
+    column-gap: 32px;
+    row-gap: 10px;
+    padding: var(--gutter);
+  }
+
+  .reveal-kicker {
+    grid-area: kicker;
+    align-self: end;
+  }
+
+  .reveal-notes {
+    text-align: left;
+  }
+
+  .reveal-stack {
+    grid-area: card;
+  }
+
+  .reveal-notes {
+    grid-area: notes;
+    font-size: 0.95rem;
+  }
+
+  .reveal-hint {
+    grid-area: hint;
+    align-self: start;
+  }
+
+  .reveal-card {
+    font-size: calc((100dvh - 2 * var(--gutter) - 12px) / 26.25);
+  }
+
+  .reveal-ghost {
+    display: none;
+  }
+
+  /* The witch's turn: her card and the choices side by side. */
+  .turn {
+    flex-direction: row;
+    gap: 24px;
+    padding: calc(var(--gutter) + var(--safe-top) + 50px)
+      calc(var(--gutter) + var(--safe-right))
+      calc(var(--gutter) + var(--safe-bottom))
+      calc(var(--gutter) + var(--safe-left));
+    overflow-y: auto;
+  }
+
+  .turn-card {
+    font-size: calc((100dvh - 2 * var(--gutter) - 64px) / 26.25);
+  }
+
+  .turn-body {
+    gap: 8px;
+    max-width: 360px;
+  }
+
+  .turn h2 {
+    font-size: 1.3rem;
+  }
+
+  .lead {
+    font-size: 0.95rem;
+  }
+
+  .choices {
+    gap: 6px;
+  }
+
+  .choice {
+    min-height: 46px;
+    padding: 6px 14px;
+  }
+
+  .choice b {
+    font-size: 1rem;
+  }
+
+  .choice small {
+    font-size: 0.82rem;
+  }
+
+  .vision {
+    top: calc(var(--gutter) + var(--safe-top) + 50px);
+  }
+
+  .vision-art {
+    height: 72px;
+  }
+
+  .finale {
+    /* Rows keep their content height (the cast row scrolls sideways and
+       would otherwise shrink and clip the names); the board scrolls instead. */
+    grid-auto-rows: max-content;
+    gap: 8px;
+    padding: calc(var(--gutter) + var(--safe-top) + 40px) var(--gutter)
+      var(--gutter);
+  }
+
+  .finale h1 {
+    font-size: 1.8rem;
+  }
+
+  .finale-cast {
+    flex-wrap: nowrap;
+    justify-content: safe center;
+    gap: 12px;
+    max-width: 100%;
+    margin: 4px 0 0;
+    padding-bottom: 6px;
+    overflow-x: auto;
+  }
+
+  .finale-cast li {
+    gap: 4px;
+    font-size: 0.9rem;
+  }
+
+  .finale-cast .tcg {
+    --s: 0.3;
+  }
+
+  .drawer header {
+    padding: calc(10px + var(--safe-top)) 16px 8px;
+  }
+
+  .drawer header h2 {
+    font-size: 1.15rem;
   }
 }
 

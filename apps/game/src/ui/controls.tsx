@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import {
+  Fragment,
   type PointerEvent,
   type ReactNode,
   useEffect,
@@ -113,7 +114,22 @@ const qualities: { value: QualityPreference; label: string }[] = [
   { value: "high", label: "Haute" },
 ];
 
-export function SettingsPanel() {
+const mouseKeys = [
+  ["ZQSD · WASD", "Marcher (Maj pour courir)"],
+  ["Glisser · ← →", "Tourner la caméra"],
+  ["Molette · pincer", "Zoomer"],
+  ["Viser · clic", "Cibler pendant une action"],
+  ["Clic droit", "S’abstenir ou passer"],
+] as const;
+const touchKeys = [
+  ["Joystick", "Marcher, pendant le débat"],
+  ["Glisser", "Tourner la caméra"],
+  ["Pincer", "Zoomer"],
+  ["Toucher · liste", "Cibler un villageois pendant une action"],
+  ["Appui long", "S’abstenir ou passer"],
+] as const;
+
+export function SettingsPanel({ touch = false }: { touch?: boolean }) {
   const {
     sensitivity,
     setSensitivity,
@@ -159,14 +175,12 @@ export function SettingsPanel() {
         <span>Mouvement réduit · coupe les travellings de caméra</span>
       </label>
       <dl className="keys">
-        <dt>ZQSD · WASD</dt>
-        <dd>Marcher (Maj pour courir)</dd>
-        <dt>Glisser · ← →</dt>
-        <dd>Tourner la caméra</dd>
-        <dt>Molette · pincer</dt>
-        <dd>Zoomer</dd>
-        <dt>Toucher un villageois</dt>
-        <dd>Le cibler pendant une action</dd>
+        {(touch ? touchKeys : mouseKeys).map(([key, effect]) => (
+          <Fragment key={key}>
+            <dt>{key}</dt>
+            <dd>{effect}</dd>
+          </Fragment>
+        ))}
       </dl>
     </div>
   );

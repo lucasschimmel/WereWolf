@@ -213,26 +213,30 @@ export function Lobby({
             </>
           )}
         </div>
-        <button
-          type="button"
-          className={me.ready ? "secondary on" : "secondary"}
-          aria-pressed={me.ready}
-          onClick={() =>
-            void act(() => update({ ...credentials, ready: !me.ready }))
-          }
-        >
-          {me.ready && <Check size={18} />} {me.ready ? "Prêt" : "Je suis prêt"}
-        </button>
-        {room.isHost && (
+        <div className="lobby-actions">
           <button
             type="button"
-            className="primary"
-            disabled={!!blocker}
-            onClick={() => void act(() => start(credentials))}
+            className={me.ready ? "secondary on" : "secondary"}
+            aria-pressed={me.ready}
+            onClick={() =>
+              void act(() => update({ ...credentials, ready: !me.ready }))
+            }
           >
-            <Play size={16} /> Lancer · {readyCount}/{room.members.length} prêts
+            {me.ready && <Check size={18} />}{" "}
+            {me.ready ? "Prêt" : "Je suis prêt"}
           </button>
-        )}
+          {room.isHost && (
+            <button
+              type="button"
+              className="primary"
+              disabled={!!blocker}
+              onClick={() => void act(() => start(credentials))}
+            >
+              <Play size={16} /> Lancer · {readyCount}/{room.members.length}{" "}
+              prêts
+            </button>
+          )}
+        </div>
       </section>
 
       <p className="footnote">

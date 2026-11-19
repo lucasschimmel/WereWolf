@@ -13,6 +13,7 @@ import { api } from "../../convex/_generated/api";
 import { characters } from "../../shared/rules";
 import { Room } from "../rooms/Room";
 import { errorMessage, guestKey, session } from "../session";
+import { enterLandscape, suggestInstall, useCoarse } from "../ui/device";
 import { LookPicker } from "../ui/LookPicker";
 
 export const Route = createFileRoute("/")({
@@ -69,6 +70,9 @@ function Gate() {
   const [pending, setPending] = useState<"create" | "join">();
   const create = useMutation(api.rooms.create);
   const join = useMutation(api.rooms.join);
+  const coarse = useCoarse();
+  const [install, setInstall] = useState(false);
+  useEffect(() => setInstall(suggestInstall()), []);
 
   useEffect(() => {
     const key = guestKey();
@@ -112,6 +116,8 @@ function Gate() {
     localStorage.setItem(lookKey, String(next));
   }
   async function submit(intent: "create" | "join") {
+    // Still inside the tap: the only moment a phone lets us go full screen.
+    void enterLandscape();
     setPending(intent);
     setError("");
     try {
@@ -218,7 +224,10 @@ function Gate() {
             <button
               type="button"
               className="link"
-              onClick={() => enter(resume, guestKey())}
+              onClick={() => {
+                void enterLandscape();
+                enter(resume, guestKey());
+              }}
             >
               <DoorOpen size={16} /> Reprendre le salon <b>{resume}</b>
             </button>
@@ -226,7 +235,16 @@ function Gate() {
         </section>
 
         <p className="footnote">
-          ZQSD pour te promener · glisse pour regarder autour
+          {coarse
+            ? "Le village se joue en paysage · glisse pour regarder autour"
+            : "ZQSD pour te promener · glisse pour regarder autour"}
+          {install && (
+            <>
+              <br />
+              Plein écran : Partager → « Sur l’écran d’accueil », puis lance le
+              jeu depuis l’icône
+            </>
+          )}
         </p>
       </div>
     </main>

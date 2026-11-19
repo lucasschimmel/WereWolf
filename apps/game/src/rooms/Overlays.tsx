@@ -55,7 +55,7 @@ export function WitchTurn({
               <b>{heal ? "Remède versé" : `Remède · sauver ${name(attack)}`}</b>
               <small>
                 {heal
-                  ? "Clique pour reprendre ta fiole"
+                  ? "Appuie encore pour reprendre ta fiole"
                   : "Ta seule fiole de remède"}
               </small>
             </button>
@@ -68,7 +68,7 @@ export function WitchTurn({
               onClick={onClearPoison}
             >
               <b>Poison · {name(poison)}</b>
-              <small>Clique pour reprendre ta fiole</small>
+              <small>Appuie encore pour reprendre ta fiole</small>
             </button>
           ) : (
             targets.length > 0 && (
