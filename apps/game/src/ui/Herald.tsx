@@ -33,6 +33,11 @@ const headlines: Partial<
     tone: role === "wolf" ? "blood" : "night",
   }),
   dawn: () => ({ title: "Le jour se lève", tone: "day" }),
+  mayorElection: () => ({
+    title: "Le village élit son Maire",
+    detail: "Le Maire tranche si le second vote reste à égalité.",
+    tone: "gold",
+  }),
   debate: () => ({
     title: "Débat",
     detail: "Accusez, défendez, mentez. Sur Discord.",
@@ -46,6 +51,11 @@ const headlines: Partial<
   runoff: () => ({
     title: "Égalité",
     detail: "Second vote entre les ex æquo.",
+    tone: "gold",
+  }),
+  mayorVerdict: () => ({
+    title: "Le départage reste à égalité",
+    detail: "Le Maire peut désigner une personne parmi les ex æquo.",
     tone: "gold",
   }),
   dayShot: () => ({
@@ -118,7 +128,12 @@ export function useHerald(
       state.phase = match.phase;
     }
     for (const event of match.events.slice(state.events)) {
-      if (event.votes) {
+      if (event.mayor) {
+        push(400, {
+          title: `${name(event.mayor)} devient Maire`,
+          tone: "gold",
+        });
+      } else if (event.votes) {
         const ranking = tally(event.votes);
         const top = ranking[0];
         const tied =

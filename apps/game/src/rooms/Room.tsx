@@ -474,7 +474,9 @@ function RoomContent({
 
         {pointAction &&
           pointing.targets.length > 0 &&
-          (coarse ? (
+          (coarse ||
+          pointAction === "electMayor" ||
+          pointAction === "decideTie" ? (
             <TargetPicker
               room={room}
               targets={pointing.targets}

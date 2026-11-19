@@ -12,6 +12,8 @@ export type Action = NonNullable<MatchView["action"]> | "poison";
 /** What pointing does for each action, said in a few words. */
 export const instructions: Record<Action, string> = {
   vote: "Pointe quelqu’un et clique · clic droit pour t’abstenir",
+  electMayor: "Choisis qui élire à la mairie",
+  decideTie: "Choisis qui éliminer parmi les ex æquo",
   shot: "Ta dernière flèche · pointe un vivant",
   wolf: "Pointez votre proie ensemble · égalité : pas d’attaque",
   inspect: "Pointe quelqu’un pour découvrir son camp",
@@ -24,6 +26,8 @@ export const instructions: Record<Action, string> = {
 /** The same instructions for a finger: tap a puppet or use the list. */
 export const touchInstructions: Record<Action, string> = {
   vote: "Touche quelqu’un ou choisis dans la liste",
+  electMayor: instructions.electMayor,
+  decideTie: instructions.decideTie,
   shot: "Ta dernière flèche · choisis un vivant",
   wolf: "Choisissez votre proie ensemble · égalité : pas d’attaque",
   inspect: "Choisis quelqu’un pour découvrir son camp",
@@ -35,6 +39,8 @@ export const touchInstructions: Record<Action, string> = {
 
 export const passLabels: Record<Action, string> = {
   vote: "S’abstenir",
+  electMayor: "S’abstenir",
+  decideTie: "N’éliminer personne",
   shot: "Ne pas tirer",
   wolf: "S’abstenir",
   inspect: "Passer",
@@ -111,10 +117,21 @@ export function statusFor({
     }
     case "dawn":
       return { title: "Aube", detail: "Le village découvre la nuit" };
+    case "mayorElection":
+      return {
+        title: "Élection du Maire",
+        detail: aiming ? `${said.electMayor}${echo}` : watching,
+      };
     case "debate":
       return {
         title: "Débat",
-        detail: watching ?? "Parlez sur Discord · promène-toi sur la place",
+        detail:
+          watching ??
+          (match.mayor
+            ? room.me === match.mayor
+              ? "Tu es le Maire · tu tranches si le départage reste à égalité"
+              : `Maire · ${name(match.mayor) ?? "Élu par le village"}`
+            : "Parlez sur Discord · promène-toi sur la place"),
       };
     case "vote":
       return {
@@ -127,6 +144,13 @@ export function statusFor({
         detail: aiming
           ? `Seulement entre les ex æquo${echo}`
           : (watching ?? "Seulement entre les ex æquo"),
+      };
+    case "mayorVerdict":
+      return {
+        title: "Le Maire tranche",
+        detail: aiming
+          ? `${said.decideTie}${echo}`
+          : `${name(match.mayor) ?? "Le Maire"} peut trancher entre les ex æquo`,
       };
     case "dawnShot":
     case "dayShot":

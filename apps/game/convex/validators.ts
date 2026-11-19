@@ -41,9 +41,11 @@ export const phase = v.union(
   v.literal("potions"),
   v.literal("dawn"),
   v.literal("dawnShot"),
+  v.literal("mayorElection"),
   v.literal("debate"),
   v.literal("vote"),
   v.literal("runoff"),
+  v.literal("mayorVerdict"),
   v.literal("dayShot"),
   v.literal("ended"),
 );
@@ -66,6 +68,7 @@ export const choices = v.record(v.string(), v.string());
 export const event = v.object({
   cycle: v.number(),
   label: v.string(),
+  mayor: v.optional(v.string()),
   deaths: v.optional(v.array(v.string())),
   votes: v.optional(choices),
 });

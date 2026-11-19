@@ -2,11 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { defaultSettings, maskedRange, turnSeconds } from "../shared/rules";
 import type { Id } from "./_generated/dataModel";
 import {
+  advanceDayBallot,
   advanceNight,
+  beginDebate,
+  dayAbility,
   finishDeaths,
+  finishElection,
   firstWindow,
   inspect,
   isTurnComplete,
+  kill,
   type Match,
   nextNight,
   nightAbility,
@@ -84,6 +89,75 @@ test("the Little Girl ignores non-wolf actions targeting the observed player", (
   inspect(match, "villager", "seer");
 
   expect(match.seats.villager.intel).toEqual(["1|seer|packDidNotVote"]);
+});
+
+test("living players elect a public mayor and replace them after their death", () => {
+  const match = scenario();
+  match.phase = beginDebate(match);
+  expect(match.phase).toBe("mayorElection");
+  match.votes = { seer: "seer", villager: "witch" };
+
+  expect(finishElection(match, () => 0)).toBe("debate");
+  expect(match.mayor).toBe("seer");
+  expect(match.events[0].mayor).toBe("seer");
+  expect(match.votes).toEqual({});
+  expect(beginDebate(match)).toBe("debate");
+  kill(match, ["seer"]);
+  expect(beginDebate(match)).toBe("mayorElection");
+});
+
+test("only the mayor gets a verdict after a second tied ballot", () => {
+  const match = scenario();
+  match.phase = "vote";
+  match.mayor = "seer";
+  match.votes = { wolf: "hunter", lone: "wolf", witch: "guard" };
+
+  match.phase = advanceDayBallot(match);
+  expect(match.phase).toBe("runoff");
+  expect(dayAbility(match, "seer")?.action).toBe("vote");
+  match.votes = { wolf: "hunter", lone: "wolf" };
+  match.phase = advanceDayBallot(match);
+
+  expect(match.phase).toBe("mayorVerdict");
+  expect(dayAbility(match, "seer")).toEqual({
+    action: "decideTie",
+    targets: ["hunter", "wolf"],
+  });
+  expect(dayAbility(match, "lone")).toBeUndefined();
+});
+
+test("the mayor's verdict triggers the hunter's retaliation", () => {
+  const match = scenario();
+  match.phase = "mayorVerdict";
+  match.mayor = "seer";
+  match.runoff = ["hunter", "wolf"];
+  match.votes = { seer: "hunter" };
+
+  expect(advanceDayBallot(match)).toBe("dayShot");
+  expect(match.hunter).toBe("hunter");
+  expect(match.seats.hunter.alive).toBe(false);
+});
+
+test("a mayor can pass and let the day end without a death", () => {
+  const match = scenario();
+  match.phase = "mayorVerdict";
+  match.mayor = "seer";
+  match.runoff = ["hunter", "wolf"];
+  match.votes = { seer: "" };
+
+  expect(advanceDayBallot(match)).toBe("night");
+  expect(match.events.at(-1)?.deaths).toEqual([]);
+});
+
+test("a conclusive runoff eliminates its winner without asking the mayor", () => {
+  const match = scenario();
+  match.phase = "runoff";
+  match.mayor = "seer";
+  match.runoff = ["villager", "wolf"];
+  match.votes = { seer: "wolf", guard: "wolf", wolf: "villager" };
+
+  expect(advanceDayBallot(match)).toBe("night");
+  expect(match.events.at(-1)?.deaths).toEqual(["wolf"]);
 });
 test("protection blocks the pack attack and locks the previous target", () => {
   const match = scenario();

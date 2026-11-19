@@ -195,9 +195,11 @@ export type Phase =
   | "potions"
   | "dawn"
   | "dawnShot"
+  | "mayorElection"
   | "debate"
   | "vote"
   | "runoff"
+  | "mayorVerdict"
   | "dayShot"
   | "ended";
 export type Outcome = Camp | "draw";
@@ -207,14 +209,18 @@ export const phaseNames: Record<Phase, string> = {
   potions: "Nuit",
   dawn: "Aube",
   dawnShot: "Riposte",
+  mayorElection: "Élection du Maire",
   debate: "Débat",
   vote: "Vote",
   runoff: "Départage",
+  mayorVerdict: "Décision du Maire",
   dayShot: "Riposte",
   ended: "Fin de partie",
 };
 export const isNight = (phase: Phase) =>
   phase === "night" || phase === "potions";
+export const isDayBallot = (phase: Phase) =>
+  phase === "mayorElection" || phase === "vote" || phase === "runoff";
 
 /** Whether a dead player's role is shown to everyone (same rule as `game.view`). */
 export const revealsOnDeath = (settings: Settings) =>
@@ -303,9 +309,11 @@ export function secondsFor(phase: Phase, count: number, mode: Mode) {
     potions: turnSeconds("witch"),
     dawn: 10,
     dawnShot: 15,
+    mayorElection: 20,
     debate: express ? (small ? 75 : 100) : small ? 150 : 180,
     vote: express ? 20 : 30,
     runoff: express ? 15 : 20,
+    mayorVerdict: 15,
     dayShot: 15,
     ended: 0,
   }[phase];

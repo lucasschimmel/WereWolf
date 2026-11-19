@@ -6,7 +6,6 @@ import {
   isNight,
   maskedSeconds,
   type Phase,
-  plurality,
   revealsOnDeath,
   secondsFor,
   turnSeconds,
@@ -15,11 +14,13 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import {
+  advanceDayBallot,
   advanceNight,
+  beginDebate,
   finishDeaths,
+  finishElection,
   holderAlive,
   isTurnComplete,
-  kill,
   type Match,
   nextNight,
 } from "./engine";
@@ -54,41 +55,23 @@ export const advance = internalMutation({
         next = advanceNight(match);
         break;
       case "dawn":
-        next = match.hunter ? "dawnShot" : "debate";
+        next = match.hunter ? "dawnShot" : beginDebate(match);
         break;
       case "dawnShot":
         finishDeaths(match, "Riposte du Chasseur");
-        next = match.outcome ? "ended" : "debate";
+        next = match.outcome ? "ended" : beginDebate(match);
+        break;
+      case "mayorElection":
+        next = finishElection(match);
         break;
       case "debate":
         next = "vote";
         break;
       case "vote":
-      case "runoff": {
-        const leaders = plurality(match.votes);
-        match.events.push({
-          cycle: match.cycle,
-          label: match.phase === "vote" ? "Vote du village" : "Départage",
-          votes: match.votes,
-        });
-        match.votes = {};
-        if (match.phase === "vote" && leaders.length > 1) {
-          match.runoff = leaders;
-          next = "runoff";
-          break;
-        }
-        if (leaders.length === 1) {
-          kill(match, leaders);
-          if (match.seats[leaders[0]].role === "jester") match.outcome = "solo";
-        }
-        if (match.hunter) {
-          next = "dayShot";
-          break;
-        }
-        finishDeaths(match, "Verdict");
-        next = match.outcome ? "ended" : nextNight(match);
+      case "runoff":
+      case "mayorVerdict":
+        next = advanceDayBallot(match);
         break;
-      }
       case "dayShot":
         finishDeaths(match, "Verdict");
         next = match.outcome ? "ended" : nextNight(match);
@@ -129,8 +112,10 @@ const earlyPhases: ReadonlySet<Phase> = new Set([
   "night",
   "potions",
   "dawnShot",
+  "mayorElection",
   "vote",
   "runoff",
+  "mayorVerdict",
   "dayShot",
 ]);
 

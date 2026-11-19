@@ -1,5 +1,6 @@
 import {
   cardFor,
+  isDayBallot,
   maxCycles,
   type NightTurn,
   nightTurns,
@@ -68,10 +69,13 @@ export function isTurnComplete(match: Match): boolean {
     case "dayShot":
       return !!match.hunter && match.done === true;
     case "vote":
+    case "mayorElection":
     case "runoff": {
       const living = alive(match);
       return living.length > 0 && living.every((id) => id in match.votes);
     }
+    case "mayorVerdict":
+      return !!match.mayor && match.mayor in match.votes;
     default:
       return false;
   }
@@ -238,6 +242,95 @@ export function finishDeaths(match: Match, label: string) {
   match.shot = skip;
   match.outcome ??= victory(alive(match).map((id) => camp(match, id)));
 }
+
+export function livingMayor(match: Match) {
+  return match.mayor && match.seats[match.mayor]?.alive
+    ? match.mayor
+    : undefined;
+}
+
+export function dayAbility(match: Match, id: string) {
+  if (!match.seats[id]?.alive) return;
+  if (match.phase === "mayorVerdict") {
+    if (livingMayor(match) === id)
+      return {
+        action: "decideTie",
+        targets: match.runoff.filter((target) => match.seats[target]?.alive),
+      } as const;
+    return;
+  }
+  if (!isDayBallot(match.phase)) return;
+  if (match.phase === "mayorElection")
+    return { action: "electMayor", targets: alive(match) } as const;
+  const candidates = match.phase === "runoff" ? match.runoff : alive(match);
+  return {
+    action: "vote",
+    targets: candidates.filter((target) => target !== id),
+  } as const;
+}
+
+export function beginDebate(match: Match): Phase {
+  if (livingMayor(match)) return "debate";
+  match.mayor = undefined;
+  return "mayorElection";
+}
+
+export function finishElection(match: Match, random = Math.random): Phase {
+  const leaders = plurality(match.votes);
+  const mayor = leaders[Math.floor(random() * leaders.length)];
+  match.mayor = mayor;
+  match.events.push({
+    cycle: match.cycle,
+    label: "Élection du Maire",
+    ...(mayor ? { mayor } : {}),
+    votes: match.votes,
+  });
+  match.votes = {};
+  return "debate";
+}
+
+function finishVerdict(match: Match, target?: string): Phase {
+  if (target) {
+    kill(match, [target]);
+    if (match.seats[target].role === "jester") match.outcome = "solo";
+  }
+  if (match.hunter) return "dayShot";
+  finishDeaths(match, "Verdict");
+  return match.outcome ? "ended" : nextNight(match);
+}
+
+export function advanceDayBallot(match: Match): Phase {
+  if (match.phase === "mayorVerdict") {
+    const mayor = livingMayor(match);
+    const target = mayor ? match.votes[mayor] : undefined;
+    const validTarget =
+      mayor && target && dayAbility(match, mayor)?.targets.includes(target)
+        ? target
+        : undefined;
+    match.events.push({
+      cycle: match.cycle,
+      label: "Décision du Maire",
+      votes: match.votes,
+    });
+    match.votes = {};
+    return finishVerdict(match, validTarget);
+  }
+
+  const leaders = plurality(match.votes);
+  match.events.push({
+    cycle: match.cycle,
+    label: match.phase === "vote" ? "Vote du village" : "Départage",
+    votes: match.votes,
+  });
+  match.votes = {};
+  if (leaders.length > 1) {
+    match.runoff = leaders;
+    if (match.phase === "vote") return "runoff";
+    if (livingMayor(match)) return "mayorVerdict";
+  }
+  return finishVerdict(match, leaders.length === 1 ? leaders[0] : undefined);
+}
+
 export function nextNight(match: Match) {
   if (match.cycle >= maxCycles) {
     match.outcome ??= "draw";

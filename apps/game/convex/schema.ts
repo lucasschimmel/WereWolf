@@ -65,6 +65,7 @@ export default defineSchema({
       }),
     ),
     votes: choices,
+    mayor: v.optional(v.string()),
     night: choices,
     runoff: v.array(v.string()),
     attack: v.string(),

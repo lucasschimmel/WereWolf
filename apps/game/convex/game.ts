@@ -1,11 +1,19 @@
 import { v } from "convex/values";
 import { normalizePose } from "../shared/motion";
-import { isNight } from "../shared/rules";
+import { isDayBallot, isNight } from "../shared/rules";
 import { signTicket, ticketLifetime } from "../shared/ticket";
 import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { access, fail, roster } from "./access";
-import { alive, camp, inspect, nightOrder, turnAbility } from "./engine";
+import {
+  alive,
+  camp,
+  dayAbility,
+  inspect,
+  livingMayor,
+  nightOrder,
+  turnAbility,
+} from "./engine";
 import { publicTiming, schedule, settleEarly } from "./phases";
 import { credentials } from "./validators";
 
@@ -46,21 +54,14 @@ export const view = query({
     if (!match) return { ...base, match: null };
     const seat = match.seats[player._id];
     const living = alive(match);
-    const ballot =
-      seat.alive && (match.phase === "vote" || match.phase === "runoff");
+    const ballot = dayAbility(match, player._id);
     const shooting =
       (match.phase === "dayShot" || match.phase === "dawnShot") &&
       match.hunter === player._id;
     const witch =
       match.phase === "potions" && seat.alive && seat.role === "witch";
     const ability = turnAbility(match, player._id);
-    const targets = ballot
-      ? (match.phase === "runoff" ? match.runoff : living).filter(
-          (id) => id !== player._id,
-        )
-      : shooting
-        ? living
-        : ability?.targets;
+    const targets = ballot?.targets ?? (shooting ? living : ability?.targets);
     const mates =
       seat.role === "wolf"
         ? Object.keys(match.seats).filter((id) => camp(match, id) === "pack")
@@ -76,6 +77,7 @@ export const view = query({
         events: match.events,
         audit: ended ? match.audit : undefined,
         role: seat.role,
+        mayor: livingMayor(match),
         nightOrder: isNight(match.phase) ? nightOrder(match) : undefined,
         intel: seat.intel,
         mates,
@@ -83,20 +85,15 @@ export const view = query({
           ability?.action === "wolf"
             ? Object.fromEntries(mates.map((id) => [id, match.night[id] ?? ""]))
             : undefined,
-        // Votes are public and live, but only during vote/runoff.
-        ballots:
-          match.phase === "vote" || match.phase === "runoff"
-            ? Object.fromEntries(
-                Object.entries(match.votes).filter(
-                  ([voter, target]) => target && match.seats[voter]?.alive,
-                ),
-              )
-            : undefined,
-        action: ballot
-          ? ("vote" as const)
-          : shooting
-            ? ("shot" as const)
-            : ability?.action,
+        ballots: isDayBallot(match.phase)
+          ? Object.fromEntries(
+              Object.entries(match.votes).filter(
+                ([voter, target]) => target && match.seats[voter]?.alive,
+              ),
+            )
+          : undefined,
+        action:
+          ballot?.action ?? (shooting ? ("shot" as const) : ability?.action),
         targets,
         selected: ballot
           ? match.votes[player._id]
@@ -127,6 +124,8 @@ export const choose = mutation({
     target: v.string(),
     action: v.union(
       v.literal("vote"),
+      v.literal("electMayor"),
+      v.literal("decideTie"),
       v.literal("shot"),
       v.literal("wolf"),
       v.literal("inspect"),
@@ -157,13 +156,15 @@ export const choose = mutation({
       return;
     }
     if (!seat.alive) fail("Tu observes la partie.");
-    if (action === "vote") {
+    if (
+      action === "vote" ||
+      action === "electMayor" ||
+      action === "decideTie"
+    ) {
+      const ballot = dayAbility(match, id);
       if (
-        (match.phase !== "vote" && match.phase !== "runoff") ||
-        (target &&
-          (!match.seats[target]?.alive ||
-            target === id ||
-            (match.phase === "runoff" && !match.runoff.includes(target))))
+        ballot?.action !== action ||
+        (target && !ballot.targets.includes(target))
       )
         fail("Vote invalide.");
       await ctx.db.patch(match._id, {

@@ -63,6 +63,7 @@ function showStatus(views: RoomView[], detailed: boolean) {
   console.log(
     `${first.code} · ${modes[first.settings.mode]} · ${first.members.length} joueurs · ${match ? `${phaseNames[match.phase]}${match.turn ? ` (${turnName(match.turn, first.settings)})` : ""} · tour ${match.cycle} · ${match.remaining !== undefined ? "pause · " : ""}${seconds} s` : "Lobby"}`,
   );
+  if (match?.mayor) console.log(`Maire · ${nameOf(first, match.mayor)}`);
   for (const view of views) {
     const member = view.members.find((entry) => entry.id === view.me);
     const state = view.match;
