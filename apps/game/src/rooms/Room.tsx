@@ -132,8 +132,10 @@ function pointingFor(match: MatchView | null, poisonAim: boolean): Pointing {
       selected: match.potions.poison || undefined,
     };
   if (!match.action) return { targets: [] };
-  // A vision is final: once made, the seer stops pointing.
-  if (match.action === "inspect" && match.selected !== undefined)
+  if (
+    (match.action === "inspect" || match.action === "peek") &&
+    match.selected !== undefined
+  )
     return { targets: [] };
   return {
     action: match.action,
@@ -521,6 +523,7 @@ function RoomContent({
             room={room}
             target={vision.target}
             result={vision.result}
+            packVote={vision.packVote}
             text={vision.text}
             onDone={closeVision}
           />

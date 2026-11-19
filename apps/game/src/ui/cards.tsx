@@ -1,3 +1,4 @@
+import { Eye } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   type Camp,
@@ -51,6 +52,13 @@ const themes: Record<
     art: "#141a3a",
     accent: "#afc4ff",
   },
+  littleGirl: {
+    frame: "#60465b",
+    inner: "#261b2c",
+    bar: "#493447",
+    art: "#241a36",
+    accent: "#f2c7da",
+  },
   guard: {
     frame: "#7a5c1e",
     inner: "#2e2410",
@@ -98,6 +106,7 @@ const timing: Record<string, string> = {
   wolf: "Chaque nuit",
   villager: "Le jour",
   seer: "Chaque nuit",
+  littleGirl: "Chaque nuit",
   guard: "Chaque nuit",
   witch: "Une fois chacune",
   hunter: "À sa mort",
@@ -122,6 +131,7 @@ const numbers: Record<string, string> = {
   witch: "05",
   hunter: "06",
   jester: "07",
+  littleGirl: "08",
 };
 
 export const themeOf = (role: Role) =>
@@ -130,6 +140,8 @@ export const accentOf = (role: Role) => themes[themeOf(role)].accent;
 
 /** Flat illustration of a role, drawn for the card's art window. */
 export function RoleArt({ kind: role }: { kind: Role }) {
+  if (role === "littleGirl")
+    return <Eye size="42%" color={accentOf(role)} aria-hidden="true" />;
   const art = arts[themeOf(role)] ?? arts.custom;
   return (
     <svg

@@ -57,6 +57,34 @@ function scenario(): Match {
     pauses: 2,
   };
 }
+
+test("only the Little Girl learns about a wolf vote when a tied attack fails", () => {
+  const match = scenario();
+  match.seats.villager.role = "littleGirl";
+  match.night = { wolf: "seer", lone: "hunter" };
+  match.phase = advanceNight(match);
+  expect(turnAbility(match, "villager")).toEqual({
+    action: "peek",
+    targets: ["wolf", "lone", "guard", "hunter", "seer", "witch"],
+  });
+
+  inspect(match, "villager", "seer");
+  firstWindow(match);
+
+  expect(match.attack).toBe("");
+  expect(match.seats.villager.intel).toEqual(["1|seer|packVoted"]);
+  expect(match.seats.seer.intel).toEqual([]);
+});
+
+test("the Little Girl ignores non-wolf actions targeting the observed player", () => {
+  const match = scenario();
+  match.seats.villager.role = "littleGirl";
+  match.night = { wolf: "hunter", lone: "", guard: "seer" };
+
+  inspect(match, "villager", "seer");
+
+  expect(match.seats.villager.intel).toEqual(["1|seer|packDidNotVote"]);
+});
 test("protection blocks the pack attack and locks the previous target", () => {
   const match = scenario();
   match.night = { wolf: "seer", guard: "seer" };

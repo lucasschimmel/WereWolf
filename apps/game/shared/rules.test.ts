@@ -26,6 +26,10 @@ describe("official room settings", () => {
       );
       expect(deck.includes("witch")).toBe(size >= 10);
       expect(deck.includes("hunter")).toBe(size >= 9);
+      expect(deck).toContain("seer");
+      expect(deck.filter((role) => role === "littleGirl")).toHaveLength(
+        size === 10 || size === 11 ? 1 : 0,
+      );
     });
   }
   test("introduces the solitaire at the Chaos threshold", () => {
@@ -44,7 +48,11 @@ describe("official room settings", () => {
 });
 describe("night turns", () => {
   test("follow the dealt deck in a fixed order", () => {
-    expect(nightTurns(deckFor(10, defaultSettings))).toEqual(["pack", "seer"]);
+    expect(nightTurns(deckFor(10, defaultSettings))).toEqual([
+      "pack",
+      "littleGirl",
+      "seer",
+    ]);
     expect(nightTurns(deckFor(8, defaultSettings))).toEqual([
       "pack",
       "seer",
@@ -90,6 +98,21 @@ describe("Workshop decks", () => {
         replaced: ["wolf"],
       }),
     ).toThrow("remplacée");
+  });
+  test("keeps existing two-villager replacements legal at ten players", () => {
+    const deck = deckFor(10, {
+      ...defaultSettings,
+      mode: "workshop",
+      custom: [
+        { ...defaultCustom, name: "Témoin" },
+        { ...defaultCustom, name: "Pisteur" },
+      ],
+      replaced: ["villager", "villager"],
+    });
+
+    expect(deck).toContain("littleGirl");
+    expect(deck).toContain("villager");
+    expect(deck).toContain("custom:1");
   });
 });
 describe("night timing helpers", () => {

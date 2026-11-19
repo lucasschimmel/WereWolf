@@ -15,6 +15,7 @@ export const instructions: Record<Action, string> = {
   shot: "Ta dernière flèche · pointe un vivant",
   wolf: "Pointez votre proie ensemble · égalité : pas d’attaque",
   inspect: "Pointe quelqu’un pour découvrir son camp",
+  peek: "Pointe quelqu’un pour savoir si un loup a voté contre cette personne",
   protect: "Pointe la personne à protéger de la meute",
   activity: "Pointe quelqu’un pour savoir s’il a agi cette nuit",
   poison: "Poison · pointe ta cible · clic droit pour annuler",
@@ -26,6 +27,7 @@ export const touchInstructions: Record<Action, string> = {
   shot: "Ta dernière flèche · choisis un vivant",
   wolf: "Choisissez votre proie ensemble · égalité : pas d’attaque",
   inspect: "Choisis quelqu’un pour découvrir son camp",
+  peek: "Choisis quelqu’un pour savoir si un loup a voté contre cette personne",
   protect: "Choisis la personne à protéger de la meute",
   activity: "Choisis quelqu’un pour savoir s’il a agi cette nuit",
   poison: "Poison · choisis ta cible",
@@ -36,6 +38,7 @@ export const passLabels: Record<Action, string> = {
   shot: "Ne pas tirer",
   wolf: "S’abstenir",
   inspect: "Passer",
+  peek: "Passer",
   protect: "Passer",
   activity: "Passer",
   poison: "Annuler",
@@ -43,6 +46,7 @@ export const passLabels: Record<Action, string> = {
 
 const turnTones: Partial<Record<NightTurn, Tone>> = {
   pack: "pack",
+  littleGirl: "seer",
   seer: "seer",
   witch: "witch",
 };
@@ -95,6 +99,14 @@ export function statusFor({
       if (witchTurn) return { title, tone, detail: "C’est ton tour" };
       if (match.action === "inspect" && match.selected)
         return { title, tone, detail: `Ta vision est faite · ${choice}` };
+      if (match.action === "peek" && match.selected !== undefined)
+        return {
+          title,
+          tone,
+          detail: choice
+            ? `Tu as enquêté sur ${choice}`
+            : "Tu as passé ton tour",
+        };
       return { title, tone, detail: watching ?? "Tu dors chez toi…" };
     }
     case "dawn":
@@ -132,6 +144,7 @@ export function statusFor({
 export function readIntel(room: View, entry: string) {
   const [cycle, target, result] = entry.split("|");
   const who = room.members.find((member) => member.id === target)?.name ?? "?";
+  const packVote = result === "packVoted" || result === "packDidNotVote";
   const camp =
     result === "pack"
       ? "la Meute"
@@ -143,8 +156,12 @@ export function readIntel(room: View, entry: string) {
     target,
     who,
     result,
-    text:
-      result === "active"
+    packVote,
+    text: packVote
+      ? result === "packVoted"
+        ? `Au moins un loup a voté contre ${who} cette nuit`
+        : `Aucun loup n’a voté contre ${who} cette nuit`
+      : result === "active"
         ? `${who} a agi cette nuit`
         : result === "idle"
           ? `${who} n’a rien fait cette nuit`

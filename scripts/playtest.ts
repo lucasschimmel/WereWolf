@@ -1,7 +1,6 @@
 import { createInterface } from "node:readline";
 import { ConvexError } from "convex/values";
 import {
-  type Camp,
   campNames,
   cardFor,
   modes,
@@ -32,13 +31,18 @@ Sans commande, démarre une session interactive.
   help                       Affiche les commandes
   quit                       Quitte la CLI, conserve les faux joueurs
 
-L’hôte règle et lance sa partie dans le navigateur. La nuit se joue tour par
-tour (Meute, Voyante, Veilleur, cartes de l’Atelier, Sorcière, Chasseur) :
-chaque next passe au tour suivant. Seuls les joueurs du tour en cours ont une
-action ; utilise status après next pour les voir.
+L’hôte règle et lance sa partie dans le navigateur. Chaque next passe à la phase
+ou au tour suivant. Utilise status après next pour voir qui peut agir.
 `;
 const nameOf = (view: RoomView, id: string) =>
   view.members.find((member) => member.id === id)?.name ?? (id || "passe");
+const intelLabels: Record<string, string> = {
+  ...campNames,
+  active: "a agi",
+  idle: "n’a pas agi",
+  packVoted: "a reçu au moins un vote de la Meute",
+  packDidNotVote: "n’a reçu aucun vote de la Meute",
+};
 const label = (error: unknown) =>
   error instanceof ConvexError && typeof error.data === "string"
     ? error.data
@@ -96,7 +100,7 @@ function showStatus(views: RoomView[], detailed: boolean) {
       for (const intel of state.intel) {
         const [cycle, target, result] = intel.split("|");
         console.log(
-          `    Nuit ${cycle} · ${nameOf(view, target)} · ${campNames[result as Camp] ?? (result === "active" ? "a agi" : "n’a pas agi")}`,
+          `    Nuit ${cycle} · ${nameOf(view, target)} · ${intelLabels[result] ?? result}`,
         );
       }
   }

@@ -38,6 +38,11 @@ export const cards = {
     camp: "village",
     text: "Découvre le camp d’un autre vivant chaque nuit.",
   },
+  littleGirl: {
+    name: "Petite Fille",
+    camp: "village",
+    text: "Chaque nuit, découvre si au moins un loup a voté contre un autre vivant de ton choix.",
+  },
   guard: {
     name: "Veilleur",
     camp: "village",
@@ -132,6 +137,7 @@ export function deckFor(count: number, settings: Settings): Role[] {
   const deck: Role[] = Array.from({ length: wolves }, () => "wolf");
   deck.push("seer", count < 10 ? "guard" : "witch");
   if (count >= 9) deck.push("hunter");
+  if (count === 10 || count === 11) deck.push("littleGirl");
   if (settings.mode === "chaos") deck.push("jester");
   while (deck.length < count) deck.push("villager");
   if (settings.mode !== "workshop") return deck;
@@ -170,8 +176,11 @@ export function deckFor(count: number, settings: Settings): Role[] {
   const inspection = settings.custom.filter(
     (card) => card.effect !== "protect" && card.uses === "repeat",
   ).length;
-  if (deck.filter((role) => role === "villager").length < 2)
-    throw new Error("Garde au moins deux Villageois simples.");
+  if (
+    deck.filter((role) => role === "villager" || role === "littleGirl").length <
+    2
+  )
+    throw new Error("Garde au moins deux cartes Villageois ou Petite Fille.");
   if (protection + Number(deck.includes("guard") || deck.includes("witch")) > 1)
     throw new Error(
       "Le paquet accepte une seule carte de protection ou de soin.",
@@ -225,6 +234,7 @@ export const revealsOnDeath = (settings: Settings) =>
  */
 export const turnOrder = [
   "pack",
+  "littleGirl",
   "seer",
   "guard",
   "custom:0",

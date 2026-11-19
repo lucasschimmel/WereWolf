@@ -130,6 +130,7 @@ export const choose = mutation({
       v.literal("shot"),
       v.literal("wolf"),
       v.literal("inspect"),
+      v.literal("peek"),
       v.literal("protect"),
       v.literal("activity"),
       v.literal("heal"),
@@ -201,8 +202,8 @@ export const choose = mutation({
       (target && !ability.targets.includes(target))
     )
       fail("Ce n’est pas ton tour, ou cette cible est indisponible.");
-    if (action === "inspect") {
-      if (match.night[id] !== undefined) fail("Ta vision est déjà faite.");
+    if (action === "inspect" || action === "peek") {
+      if (match.night[id] !== undefined) fail("Tu as déjà joué ce tour.");
       const { _id, _creationTime, ...next } = match;
       inspect(next, id, target);
       await ctx.db.patch(_id, { night: next.night, seats: next.seats });

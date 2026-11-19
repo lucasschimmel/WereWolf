@@ -84,12 +84,18 @@ export function turnAbility(match: Match, id: string) {
   return nightAbility(match, id);
 }
 
-/** Records a seer-style observation and reveals it to the observer at once. */
+/** Records a private observation and reveals it to the observer at once. */
 export function inspect(match: Match, id: string, target: string) {
   match.night[id] = target;
   if (!target) return;
   match.seats[id].spent = true;
-  match.seats[id].intel.push(`${match.cycle}|${target}|${camp(match, target)}`);
+  const result =
+    match.seats[id].role === "littleGirl"
+      ? turnHolders(match, "pack").some((wolf) => match.night[wolf] === target)
+        ? "packVoted"
+        : "packDidNotVote"
+      : camp(match, target);
+  match.seats[id].intel.push(`${match.cycle}|${target}|${result}`);
 }
 
 export function nightAbility(match: Match, id: string) {
@@ -103,6 +109,11 @@ export function nightAbility(match: Match, id: string) {
   if (seat.role === "seer")
     return {
       action: "inspect",
+      targets: alive(match).filter((other) => other !== id),
+    } as const;
+  if (seat.role === "littleGirl")
+    return {
+      action: "peek",
       targets: alive(match).filter((other) => other !== id),
     } as const;
   if (seat.role === "guard")

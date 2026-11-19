@@ -109,12 +109,14 @@ export function Vision({
   room,
   target,
   result,
+  packVote,
   text,
   onDone,
 }: {
   room: View;
   target: string;
   result: string;
+  packVote: boolean;
   text: string;
   onDone: () => void;
 }) {
@@ -123,7 +125,8 @@ export function Vision({
     return () => window.clearTimeout(timer);
   }, [onDone]);
   const member = room.members.find((entry) => entry.id === target);
-  const camp = result === "active" || result === "idle" ? undefined : result;
+  const camp =
+    packVote || result === "active" || result === "idle" ? undefined : result;
   return (
     <div className="vision" role="status" aria-live="polite">
       <div className="vision-card">
@@ -141,7 +144,7 @@ export function Vision({
           )}
         </span>
         <span className="vision-art">
-          <RoleArt kind="seer" />
+          <RoleArt kind={packVote ? "littleGirl" : "seer"} />
         </span>
         <span className="vision-text">{text}</span>
       </div>

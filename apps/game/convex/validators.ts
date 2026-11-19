@@ -3,6 +3,7 @@ export const role = v.union(
   v.literal("villager"),
   v.literal("wolf"),
   v.literal("seer"),
+  v.literal("littleGirl"),
   v.literal("guard"),
   v.literal("hunter"),
   v.literal("witch"),
@@ -48,6 +49,7 @@ export const phase = v.union(
 );
 export const nightTurn = v.union(
   v.literal("pack"),
+  v.literal("littleGirl"),
   v.literal("seer"),
   v.literal("guard"),
   v.literal("custom:0"),
