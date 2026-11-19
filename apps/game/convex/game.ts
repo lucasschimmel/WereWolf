@@ -358,6 +358,7 @@ export const clean = internalMutation({
       );
       if (room.match) await ctx.db.delete(room.match);
       await ctx.db.delete(room._id);
+      await ctx.scheduler.runAfter(0, internal.chat.clean, { room: room._id });
     }
   },
 });

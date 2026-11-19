@@ -6,6 +6,7 @@ import {
   maxPlayers,
   secondsFor,
 } from "../shared/rules";
+import { internal } from "./_generated/api";
 import { mutation } from "./_generated/server";
 import { access, fail, roomByCode, roster, validKey } from "./access";
 import { schedule } from "./phases";
@@ -243,5 +244,9 @@ export const rematch = mutation({
       expires: Date.now() + lifetime,
     });
     await ctx.db.delete(match._id);
+    await ctx.scheduler.runAfter(0, internal.chat.clean, {
+      room: room._id,
+      match: match._id,
+    });
   },
 });

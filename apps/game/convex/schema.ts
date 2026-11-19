@@ -30,6 +30,15 @@ export default defineSchema({
   })
     .index("by_room", ["room"])
     .index("by_seat", ["room", "key"]),
+  messages: defineTable({
+    room: v.id("rooms"),
+    match: v.optional(v.id("matches")),
+    author: v.id("players"),
+    name: v.string(),
+    text: v.string(),
+  })
+    .index("by_room_match", ["room", "match"])
+    .index("by_author", ["author"]),
   positions: defineTable({
     room: v.id("rooms"),
     player: v.id("players"),

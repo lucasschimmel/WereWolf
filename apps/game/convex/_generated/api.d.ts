@@ -9,6 +9,7 @@
  */
 
 import type * as access from "../access.js";
+import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
 import type * as engine from "../engine.js";
 import type * as game from "../game.js";
@@ -24,6 +25,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  chat: typeof chat;
   crons: typeof crons;
   engine: typeof engine;
   game: typeof game;
