@@ -1,23 +1,23 @@
 # Incident report — first multiplayer playtest (2026-11-19)
 
-| | |
-| --- | --- |
-| Status | Findings 2a, 2b, 3, 4, 5, 6 implemented (see the resolution sections); finding 1 (mobile) open. The analysis below was written before any code change. |
-| Branch / commit | `feat/tcg-redesign` (working tree on top of `da33ae7`) |
-| Source | Manual playtest by the maintainer, 6 findings (listed below) |
-| Method | Static code reading of `apps/game/{convex,shared,src}`, `specs/game.md`, `GDD.md`. Nothing was reproduced live, so every latency figure is an **estimate from the code**, to be confirmed with the measurements in the last section. |
+|                 |                                                                                                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Status          | Findings 2a, 2b, 3, 4, 5, 6 implemented (see the resolution sections); finding 1 (mobile) open. The analysis below was written before any code change.                                                                               |
+| Branch / commit | `feat/tcg-redesign` (working tree on top of `da33ae7`)                                                                                                                                                                               |
+| Source          | Manual playtest by the maintainer, 6 findings (listed below)                                                                                                                                                                         |
+| Method          | Static code reading of `apps/game/{convex,shared,src}`, `specs/game.md`, `GDD.md`. Nothing was reproduced live, so every latency figure is an **estimate from the code**, to be confirmed with the measurements in the last section. |
 
 ## Summary
 
-| # | Finding | Type | Severity | Root cause confirmed in code? |
-| --- | --- | --- | --- | --- |
-| 1 | Mobile version needs a deep rework | UX / layout | High | Yes (partly) — desktop-first input and HUD |
-| 2a | Remote players move with a strange delay and poor fluidity | Realtime / perf | High | Yes — architecture, plus a stale-final-position bug |
-| 2b | Votes: others cannot see who each player points at before the timer ends | Missing feature / design | Medium | Yes — votes are never sent to clients |
-| 3 | Role cards are not pretty | Visual design | Medium | Subjective, with concrete causes |
-| 4 | Dead roles still get their night turn | Rules vs. expectation | Medium | Yes — **intentional by design** (anti-leak) |
-| 5 | A role's turn waits for the timer even after the player acted | Missing feature | High | Yes — phases only advance by scheduler |
-| 6 | Hunter gets a turn every night, but acts only on death | Rules vs. expectation | Medium | Yes — **same intentional mechanism as 4** |
+| #   | Finding                                                                  | Type                     | Severity | Root cause confirmed in code?                       |
+| --- | ------------------------------------------------------------------------ | ------------------------ | -------- | --------------------------------------------------- |
+| 1   | Mobile version needs a deep rework                                       | UX / layout              | High     | Yes (partly) — desktop-first input and HUD          |
+| 2a  | Remote players move with a strange delay and poor fluidity               | Realtime / perf          | High     | Yes — architecture, plus a stale-final-position bug |
+| 2b  | Votes: others cannot see who each player points at before the timer ends | Missing feature / design | Medium   | Yes — votes are never sent to clients               |
+| 3   | Role cards are not pretty                                                | Visual design            | Medium   | Subjective, with concrete causes                    |
+| 4   | Dead roles still get their night turn                                    | Rules vs. expectation    | Medium   | Yes — **intentional by design** (anti-leak)         |
+| 5   | A role's turn waits for the timer even after the player acted            | Missing feature          | High     | Yes — phases only advance by scheduler              |
+| 6   | Hunter gets a turn every night, but acts only on death                   | Rules vs. expectation    | Medium   | Yes — **same intentional mechanism as 4**           |
 
 Findings 4, 5 and 6 share one mechanism (the fixed-length public night) and must be solved together. Findings 2a and 2b look similar but have different causes: 2a is a transport problem, 2b is a data-exposure decision.
 
@@ -232,12 +232,12 @@ In Mystery / hidden-Workshop modes the conditional `dayShot` already reveals tha
 
 ## Cross-cutting design decision: fixed public night vs. fast night
 
-| Option | Dead-role turns | Acting turns | Information leak | Matches feedback |
-| --- | --- | --- | --- | --- |
-| Today | Full length | Full length | None | No |
-| A. Reveal-aware skip + early finish | Skipped (revealing modes) / masked short (hidden modes) | Early finish after choice + grace | Only in hidden modes, mitigated by floor + jitter | Yes |
-| B. Uniform phantom window | 4–8 s random | Early finish, min floor | Minimal | Yes |
-| C. Configurable "strict secrecy" | Full length | Full length | None | Opt-in |
+| Option                              | Dead-role turns                                         | Acting turns                      | Information leak                                  | Matches feedback |
+| ----------------------------------- | ------------------------------------------------------- | --------------------------------- | ------------------------------------------------- | ---------------- |
+| Today                               | Full length                                             | Full length                       | None                                              | No               |
+| A. Reveal-aware skip + early finish | Skipped (revealing modes) / masked short (hidden modes) | Early finish after choice + grace | Only in hidden modes, mitigated by floor + jitter | Yes              |
+| B. Uniform phantom window           | 4–8 s random                                            | Early finish, min floor           | Minimal                                           | Yes              |
+| C. Configurable "strict secrecy"    | Full length                                             | Full length                       | None                                              | Opt-in           |
 
 Recommendation: implement A as the default with C as a lobby option (Mystery enables the strict variant by default). This must be decided before touching `engine.ts`, `phases.ts`, `rules.ts` and the tests.
 

@@ -379,17 +379,10 @@ input[type="checkbox"] {
 }
 
 .hud > *,
-.hud .panel,
 .hud button,
 .hud input,
 .hud select {
   pointer-events: auto;
-}
-
-.hud > .wordmark,
-.hud > .footnote,
-.hud > .toasts {
-  pointer-events: none;
 }
 
 .wordmark {
@@ -449,6 +442,10 @@ input[type="checkbox"] {
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.hud .panel {
+  pointer-events: auto;
 }
 
 .panel h2 {
@@ -1635,6 +1632,12 @@ button.tcg:hover {
   justify-items: center;
 }
 
+.hud > .wordmark,
+.hud > .footnote,
+.hud > .toasts {
+  pointer-events: none;
+}
+
 .toast {
   padding: 8px 16px;
   border-radius: 999px;
@@ -2207,7 +2210,9 @@ button.tcg:hover {
   *,
   *::before,
   *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: Reduced motion must override component animations. */
     animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: Reduced motion must override component transitions. */
     transition-duration: 0.01ms !important;
   }
 }

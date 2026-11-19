@@ -1,0 +1,2 @@
+# Keep Git checkouts consistent with Biome's LF formatter.
+* text=auto eol=lf

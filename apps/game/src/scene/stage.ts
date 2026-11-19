@@ -252,7 +252,7 @@ export class Stage {
       return { ...pose, fov: this.compact ? 66 : 58 };
     }
     const { index, member } = this.me();
-    if (!member || !member.alive || phase === "ended")
+    if (!member?.alive || phase === "ended")
       return orbitPose(
         time,
         this.orbit.offset,
