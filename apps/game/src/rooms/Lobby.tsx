@@ -47,7 +47,8 @@ function deckSummary(deck: Role[], settings: Settings) {
   return [...counts]
     .map(([role, count]) => {
       const name = cardFor(role, settings).name;
-      return count > 1 ? `${count} ${name}s` : name;
+      const plural = /[sx]$/.test(name) ? name : `${name}s`;
+      return count > 1 ? `${count} ${plural}` : name;
     })
     .join(" · ");
 }
