@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { type Stamped, validPose } from "../../game/shared/motion";
+import { normalizePose, type Stamped } from "../../game/shared/motion";
 import { verifyTicket } from "../../game/shared/ticket";
 
 /**
@@ -81,19 +81,21 @@ export class Square extends DurableObject<Env> {
   }
 
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
-    if (typeof message !== "string" || message.length > 256) return;
     const state = socket.deserializeAttachment() as Attachment;
     const now = Date.now();
     if (now - state.at < minInterval) return;
-    let raw: Partial<Stamped>;
-    try {
-      raw = JSON.parse(message);
-    } catch {
-      // Not JSON: a broken or hostile client, ignore the frame.
+    let pose: Stamped | null = null;
+    if (typeof message === "string" && message.length <= 256)
+      try {
+        pose = normalizePose(JSON.parse(message));
+      } catch {
+        // Not JSON: handled as a dropped frame below.
+      }
+    if (!pose) {
+      // Never drop silently: a client stuck sending bad frames must show up.
+      console.warn("Relay dropped a malformed pose", state.player);
       return;
     }
-    if (!validPose(raw)) return;
-    const pose: Stamped = { x: raw.x, z: raw.z, yaw: raw.yaw, t: raw.t };
     socket.serializeAttachment({
       ...state,
       pose,

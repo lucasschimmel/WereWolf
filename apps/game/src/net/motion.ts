@@ -2,7 +2,13 @@ import type { ConvexReactClient } from "convex/react";
 import { useConvex } from "convex/react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
-import { MotionBuffer, type Pose, renderDelay } from "../../shared/motion";
+import {
+  MotionBuffer,
+  normalizePose,
+  type Pose,
+  renderDelay,
+  type Stamped,
+} from "../../shared/motion";
 import type { Credentials } from "../session";
 
 /**
@@ -32,6 +38,10 @@ const relayAttempts = 4;
 const connectTimeout = 4000;
 /** Convex fallback: 5 Hz sends, so render further behind. */
 const fallbackDelay = 260;
+/** An idle player repeats its pose this often (ms). */
+const heartbeat = 1000;
+/** How long after the last move the heartbeat keeps going (ms). */
+const heartbeatSpan = 10_000;
 
 type ServerMessage =
   | { type: "snapshot"; poses: (Pose & { t: number; p: string })[] }
@@ -45,6 +55,9 @@ class MotionLink implements MotionFeed {
   private failures = 0;
   private retry?: number;
   private closed = false;
+  private last?: Stamped;
+  private movedAt = 0;
+  private pulse = window.setInterval(() => this.beat(), heartbeat / 4);
 
   constructor(
     private convex: ConvexReactClient,
@@ -56,15 +69,41 @@ class MotionLink implements MotionFeed {
   }
 
   send(pose: Pose) {
-    const stamped = { ...pose, t: Date.now() };
+    const stamped = normalizePose({ ...pose, t: Date.now() });
+    if (!stamped) {
+      console.warn("Refusing to send a non-finite pose", pose);
+      return;
+    }
+    this.last = stamped;
+    this.movedAt = stamped.t;
+    this.transmit(stamped);
+  }
+
+  private transmit(stamped: Stamped) {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(stamped));
       return;
     }
-    if (this.unwatch)
+    if (this.unwatch) {
+      const { x, z, yaw } = stamped;
       void this.convex
-        .mutation(api.game.move, { ...this.credentials, ...pose })
+        .mutation(api.game.move, { ...this.credentials, x, z, yaw })
         .catch((cause) => console.warn("Position update dropped", cause));
+    }
+  }
+
+  /**
+   * Repeats the last pose while the player stands still, so a peer that
+   * missed a frame converges within a second. It stops a while after the
+   * last real move (phases without free movement stop sending altogether);
+   * late joiners get the relay's snapshot instead.
+   */
+  private beat() {
+    const now = Date.now();
+    if (!this.last || now - this.last.t < heartbeat) return;
+    if (now - this.movedAt > heartbeatSpan) return;
+    this.last = { ...this.last, t: now };
+    this.transmit(this.last);
   }
 
   sample(player: string) {
@@ -78,6 +117,7 @@ class MotionLink implements MotionFeed {
   dispose() {
     this.closed = true;
     window.clearTimeout(this.retry);
+    window.clearInterval(this.pulse);
     this.socket?.close(1000, "leaving");
     this.unwatch?.();
   }

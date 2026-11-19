@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { validPose } from "../shared/motion";
+import { normalizePose } from "../shared/motion";
 import { signTicket, ticketLifetime } from "../shared/ticket";
 import { internal } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
@@ -305,24 +305,23 @@ export const move = mutation({
         !match.seats[player._id].alive)
     )
       return;
-    if (!validPose({ x, z, yaw, t: 0 })) return;
+    const pose = normalizePose({ x, z, yaw, t: 0 });
+    if (!pose) return;
     const previous = await ctx.db
       .query("positions")
       .withIndex("by_player", (q) => q.eq("player", player._id))
       .unique();
     const updated = Date.now();
-    // Clients send at most every 200 ms; this only stops bursts. The client
-    // always follows a burst with a final "at rest" report, so none is lost.
+    // Clients send at most every 200 ms and repeat their pose while idle, so
+    // dropping a burst here never leaves a stale position for long.
     if (previous && updated - previous.updated < 50) return;
-    if (previous) await ctx.db.patch(previous._id, { x, z, yaw, updated });
+    const row = { x: pose.x, z: pose.z, yaw: pose.yaw, updated };
+    if (previous) await ctx.db.patch(previous._id, row);
     else
       await ctx.db.insert("positions", {
         room: room._id,
         player: player._id,
-        x,
-        z,
-        yaw,
-        updated,
+        ...row,
       });
   },
 });

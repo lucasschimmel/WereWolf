@@ -24,22 +24,34 @@ const offsetDrift = 0.02;
 /** Bounds of the walkable square, shared by every transport. */
 export const plazaRadius = 10.01;
 
-export function validPose(pose: Partial<Stamped>): pose is Stamped {
-  const { x, z, yaw, t } = pose;
-  return (
-    typeof x === "number" &&
-    typeof z === "number" &&
-    typeof yaw === "number" &&
-    typeof t === "number" &&
-    [x, z, yaw, t].every(Number.isFinite) &&
-    Math.hypot(x, z) <= plazaRadius &&
-    Math.abs(yaw) <= Math.PI + 0.01
-  );
+/** Wraps an angle into [-π, π]. */
+export const wrapAngle = (angle: number) =>
+  Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/**
+ * Brings a pose back into the shared conventions: yaw wrapped into [-π, π],
+ * position clamped to the square. Every transport normalizes rather than
+ * rejects, so a pose that drifted out of range (an unwrapped yaw after a few
+ * turns, a float past the edge) never silently stops a player's updates.
+ * Returns null only for frames that are not poses at all.
+ */
+export function normalizePose(raw: unknown): Stamped | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { x, z, yaw, t } = raw as Partial<Record<keyof Stamped, unknown>>;
+  if (
+    typeof x !== "number" ||
+    typeof z !== "number" ||
+    typeof yaw !== "number" ||
+    typeof t !== "number" ||
+    ![x, z, yaw, t].every(Number.isFinite)
+  )
+    return null;
+  const radius = Math.hypot(x, z);
+  const scale = radius > plazaRadius ? plazaRadius / radius : 1;
+  return { x: x * scale, z: z * scale, yaw: wrapAngle(yaw), t };
 }
 
-function shortestAngle(from: number, to: number) {
-  return Math.atan2(Math.sin(to - from), Math.cos(to - from));
-}
+const shortestAngle = (from: number, to: number) => wrapAngle(to - from);
 
 function lerpPose(a: Pose, b: Pose, k: number): Pose {
   return {

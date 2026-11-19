@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { MotionBuffer, maxExtrapolation, validPose } from "./motion";
+import {
+  MotionBuffer,
+  maxExtrapolation,
+  normalizePose,
+  plazaRadius,
+} from "./motion";
 
 const pose = (t: number, x: number, z = 0, yaw = 0) => ({ t, x, z, yaw });
 
@@ -73,11 +78,24 @@ describe("MotionBuffer", () => {
   });
 });
 
-describe("validPose", () => {
-  test("rejects out-of-bounds and non-finite poses", () => {
-    expect(validPose(pose(1, 3, 4))).toBe(true);
-    expect(validPose(pose(1, 30, 0))).toBe(false);
-    expect(validPose(pose(Number.NaN, 0))).toBe(false);
-    expect(validPose({ x: 0, z: 0, yaw: 0 })).toBe(false);
+describe("normalizePose", () => {
+  test("keeps an in-range pose unchanged", () => {
+    expect(normalizePose(pose(1, 3, 4, 1))).toEqual(pose(1, 3, 4, 1));
+  });
+
+  test("wraps a yaw that drifted past ±π instead of dropping the pose", () => {
+    const yaw = normalizePose(pose(1, 0, 0, Math.PI + 0.5))?.yaw ?? 0;
+    expect(yaw).toBeCloseTo(-Math.PI + 0.5);
+  });
+
+  test("clamps a position past the edge back onto the square", () => {
+    const clamped = normalizePose(pose(1, 30, 0));
+    expect(clamped?.x).toBeCloseTo(plazaRadius);
+  });
+
+  test("rejects frames that are not poses", () => {
+    expect(normalizePose(pose(Number.NaN, 0))).toBeNull();
+    expect(normalizePose({ x: 0, z: 0, yaw: 0 })).toBeNull();
+    expect(normalizePose("hello")).toBeNull();
   });
 });
