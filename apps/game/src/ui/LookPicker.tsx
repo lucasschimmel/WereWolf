@@ -27,12 +27,12 @@ export function LookPicker({
   };
   return (
     <div className="look">
-      <span className="field-label">Métier</span>
+      <span className="field-label">Personnage</span>
       <div className="look-row">
         <button
           type="button"
           className="icon-button"
-          aria-label="Métier précédent"
+          aria-label="Personnage précédent"
           onClick={() => step(-1)}
         >
           <ChevronLeft size={18} />
@@ -44,7 +44,7 @@ export function LookPicker({
         <button
           type="button"
           className="icon-button"
-          aria-label="Métier suivant"
+          aria-label="Personnage suivant"
           onClick={() => step(1)}
         >
           <ChevronRight size={18} />

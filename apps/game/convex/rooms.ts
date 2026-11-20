@@ -26,7 +26,7 @@ const admission = {
 function look(character: number | undefined, fallback: number) {
   if (character === undefined) return fallback;
   if (!Number.isInteger(character) || !characters[character])
-    fail("Métier invalide.");
+    fail("Personnage invalide.");
   return character;
 }
 const lifetime = 12 * 60 * 60 * 1000;
@@ -169,7 +169,7 @@ export const profile = mutation({
       const wearer = (await roster(ctx, room._id)).find(
         (other) => other._id !== player._id && other.character === character,
       );
-      if (wearer) fail(`${wearer.name} a déjà choisi ce métier.`);
+      if (wearer) fail(`${wearer.name} a déjà choisi ce personnage.`);
     }
     await ctx.db.patch(player._id, {
       character: character ?? player.character,
