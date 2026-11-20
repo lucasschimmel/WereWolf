@@ -1,10 +1,18 @@
 import { useMutation, useQuery } from "convex/react";
-import { Home, Link2, Pause, ScrollText, Settings2, Users } from "lucide-react";
+import {
+  BookOpen,
+  Home,
+  Lightbulb,
+  Link2,
+  Pause,
+  ScrollText,
+  Settings2,
+  SkipForward,
+  Users,
+} from "lucide-react";
 import {
   Component,
-  lazy,
   type ReactNode,
-  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -14,14 +22,17 @@ import {
 import { api } from "../../convex/_generated/api";
 import { type Camp, cardFor } from "../../shared/rules";
 import { useMotion } from "../net/motion";
-import type { SceneState } from "../scene/Village";
+import { roomMap } from "../scene/maps";
+import Village, { type SceneState } from "../scene/Village";
 import { type Credentials, errorMessage } from "../session";
 import { RoleCard } from "../ui/cards";
 import { Drawer, Joystick, SettingsPanel } from "../ui/controls";
 import { useCoarse } from "../ui/device";
+import { Guide } from "../ui/Guide";
 import { Herald, RoleReveal, useHerald } from "../ui/Herald";
 import { Status } from "../ui/PhaseClock";
 import { Chat } from "./Chat";
+import { coachTip } from "./coach";
 import {
   type Action,
   nightSteps,
@@ -36,8 +47,17 @@ import { EndScreen, Vision, WitchTurn } from "./Overlays";
 import { RotatePrompt, TargetPicker } from "./Picker";
 import { usePresence, usePresenceHeartbeat } from "./presence";
 
-const Village = lazy(() => import("../scene/Village"));
-type Panel = "roster" | "journal" | "settings" | "chat" | null;
+type Panel = "roster" | "journal" | "settings" | "chat" | "guide" | null;
+const coachKey = "werewolf.coach";
+const skippable = new Set(["intro", "dawn", "debate"]);
+
+function storedCoach() {
+  try {
+    return localStorage.getItem(coachKey) !== "off";
+  } catch {
+    return true;
+  }
+}
 type Toast = { id: number; text: string; tone: "error" | "info" };
 
 export function Room({
@@ -126,7 +146,7 @@ type Pointing = {
 /** What this player can point at right now, if anything. */
 function pointingFor(match: MatchView | null, poisonAim: boolean): Pointing {
   if (!match || match.phase === "ended") return { targets: [] };
-  if (poisonAim && match.potions)
+  if (poisonAim && match.potions && !match.potions.done)
     return {
       action: "poison",
       targets: match.potions.targets,
@@ -134,7 +154,9 @@ function pointingFor(match: MatchView | null, poisonAim: boolean): Pointing {
     };
   if (!match.action) return { targets: [] };
   if (
-    (match.action === "inspect" || match.action === "peek") &&
+    (match.action === "inspect" ||
+      match.action === "peek" ||
+      match.action === "link") &&
     match.selected !== undefined
   )
     return { targets: [] };
@@ -154,15 +176,19 @@ function RoomContent({
 }) {
   const room = useQuery(api.game.view, credentials);
   usePresenceHeartbeat(credentials);
-  const motion = useMotion(credentials);
+  const motion = useMotion(credentials, room?.movementScope);
   const choose = useMutation(api.game.choose);
   const pause = useMutation(api.game.pause);
+  const skip = useMutation(api.game.skip);
+  const [coach, setCoach] = useState(storedCoach);
   const rematch = useMutation(api.rooms.rematch);
   const kick = useMutation(api.rooms.leave);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [panel, setPanel] = useState<Panel>(null);
   const [reveal, setReveal] = useState(false);
-  const [poisonAim, setPoisonAim] = useState(false);
+  const [poisonWindow, setPoisonWindow] = useState<string>();
+  const [choicePending, setChoicePending] = useState(false);
+  const choosing = useRef(false);
   const [vision, setVision] = useState<ReturnType<typeof readIntel>>();
   const toastId = useRef(0);
   const revealedFor = useRef("");
@@ -180,6 +206,27 @@ function RoomContent({
   }, []);
   const presence = usePresence(room, now, notify);
   const match = room?.match ?? null;
+  const roleBefore = useRef<MatchView["role"] | undefined>(undefined);
+  const partnerBefore = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (
+      roleBefore.current &&
+      match?.role &&
+      roleBefore.current !== match.role
+    ) {
+      setReveal(true);
+      notify("Tu as rejoint la Meute.", "info");
+    }
+    if (match?.partner && partnerBefore.current !== match.partner) {
+      const partner = room?.members.find(
+        (member) => member.id === match.partner,
+      );
+      if (partner) notify(`Cupidon t’a lié à ${partner.name}.`, "info");
+    }
+    roleBefore.current = match?.role;
+    partnerBefore.current = match?.partner;
+  }, [match?.partner, match?.role, notify, room?.members]);
 
   const act = useCallback(
     async (operation: () => Promise<unknown>) => {
@@ -194,10 +241,6 @@ function RoomContent({
   const herald = useHerald(room, match, now);
   const closeReveal = useCallback(() => setReveal(false), []);
   const closeVision = useCallback(() => setVision(undefined), []);
-
-  useEffect(() => {
-    if (!match?.potions) setPoisonAim(false);
-  }, [match?.potions]);
 
   useEffect(() => {
     if (!match || !room) {
@@ -215,26 +258,46 @@ function RoomContent({
     intelSeen.current = match.intel.length;
   }, [match, room]);
 
+  const actionWindow = match?.actionWindow;
+  const poisonAim =
+    !!match?.potions && !!actionWindow && poisonWindow === actionWindow;
   const pointing = pointingFor(match, poisonAim);
   const pointAction = pointing.action;
+  const submitChoice = useCallback(
+    async (action: Parameters<typeof choose>[0]["action"], target: string) => {
+      if (!actionWindow || choosing.current) return;
+      choosing.current = true;
+      setChoicePending(true);
+      try {
+        await choose({ ...credentials, action, target, window: actionWindow });
+        if (action === "poison" && target)
+          setPoisonWindow((current) =>
+            current === actionWindow ? undefined : current,
+          );
+      } catch (cause) {
+        notify(errorMessage(cause), "error");
+      } finally {
+        choosing.current = false;
+        setChoicePending(false);
+      }
+    },
+    [actionWindow, choose, credentials, notify],
+  );
   const onSelect = useCallback(
     (id: string) => {
       if (!pointAction) return;
-      void act(() =>
-        choose({ ...credentials, action: pointAction, target: id }),
-      );
-      if (pointAction === "poison") setPoisonAim(false);
+      void submitChoice(pointAction, id);
     },
-    [pointAction, act, choose, credentials],
+    [pointAction, submitChoice],
   );
   const onPass = useCallback(() => {
-    if (!pointAction) return;
+    if (!pointAction || choosing.current) return;
     if (pointAction === "poison") {
-      setPoisonAim(false);
+      setPoisonWindow(undefined);
       return;
     }
-    void act(() => choose({ ...credentials, action: pointAction, target: "" }));
-  }, [pointAction, act, choose, credentials]);
+    void submitChoice(pointAction, "");
+  }, [pointAction, submitChoice]);
 
   const scene: SceneState | undefined = useMemo(() => {
     if (!room) return undefined;
@@ -249,6 +312,7 @@ function RoomContent({
       ),
     );
     return {
+      map: roomMap(room.code),
       showcase: false,
       me: room.me,
       motion,
@@ -256,10 +320,13 @@ function RoomContent({
       events: match?.events ?? [],
       role: match?.role,
       outcome: match?.outcome,
+      winner: match?.winner,
       targets: pointing.targets,
       selected: pointing.selected,
-      aiming: match?.phase === "night" && pointing.targets.length > 0,
-      awake: pack ? (match?.mates ?? []).filter((id) => id !== room.me) : [],
+      aiming:
+        match?.phase === "night" &&
+        (pointing.targets.length > 0 || !!match.ghosts?.length),
+      awake: match?.awake,
       aims,
       members: room.members.map((member) => {
         const card = member.role
@@ -270,6 +337,10 @@ function RoomContent({
           name: member.name,
           character: member.character,
           alive: member.alive,
+          inScene:
+            match?.phase !== "night" ||
+            !!match.sceneActors?.includes(member.id),
+          ghost: match?.ghosts?.includes(member.id),
           host: member.host,
           ready: member.ready,
           role: card?.name,
@@ -329,7 +400,7 @@ function RoomContent({
     match?.phase === "debate" &&
     match.pauses > 0 &&
     match.remaining === undefined;
-  const witchTurn = !!match?.potions && !poisonAim;
+  const witchTurn = !!match?.potions && !match.potions.done && !poisonAim;
   const status = match
     ? statusFor({
         room,
@@ -341,14 +412,30 @@ function RoomContent({
       })
     : undefined;
   const ended = match?.phase === "ended";
+  const solo = !!room.solo;
+  const canSkip =
+    solo &&
+    room.isHost &&
+    !!match &&
+    match.remaining === undefined &&
+    skippable.has(match.phase);
+  const tip =
+    solo && coach && match
+      ? coachTip(match, me.alive, pointAction, witchTurn)
+      : undefined;
+  const toggleCoach = () => {
+    const next = !coach;
+    setCoach(next);
+    try {
+      localStorage.setItem(coachKey, next ? "on" : "off");
+    } catch (cause) {
+      console.warn("Could not remember the coach setting", cause);
+    }
+  };
 
   return (
     <main className={`game phase-${match?.phase ?? "lobby"}`}>
-      <Suspense
-        fallback={<div className="stage-loading">Le village s’éveille…</div>}
-      >
-        <Village {...scene} />
-      </Suspense>
+      <Village {...scene} />
       <div className="hud">
         {match ? (
           <button
@@ -376,7 +463,17 @@ function RoomContent({
               match.phase === "night" ? nightSteps(room, match) : undefined
             }
           >
-            {canPause && (
+            {canSkip && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Passer cette étape"
+                onClick={() => void act(() => skip(credentials))}
+              >
+                <SkipForward size={16} />
+              </button>
+            )}
+            {canPause && !solo && (
               <button
                 type="button"
                 className="icon-button"
@@ -394,6 +491,7 @@ function RoomContent({
             key={room.me}
             credentials={credentials}
             me={room.me}
+            members={room.members}
             open={panel === "chat"}
             onOpen={() => setPanel("chat")}
             onClose={() => setPanel(null)}
@@ -416,6 +514,25 @@ function RoomContent({
               <ScrollText size={18} />
             </button>
           )}
+          {solo && (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Conseils du mode solo"
+              aria-pressed={coach}
+              onClick={toggleCoach}
+            >
+              <Lightbulb size={18} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Comment jouer"
+            onClick={() => setPanel("guide")}
+          >
+            <BookOpen size={18} />
+          </button>
           <button
             type="button"
             className="icon-button"
@@ -446,6 +563,13 @@ function RoomContent({
 
         {match && !ended && <Herald item={herald} settings={room.settings} />}
 
+        {tip && (
+          <aside className="coach" aria-label="Conseil">
+            <Lightbulb size={16} aria-hidden="true" />
+            <p>{tip}</p>
+          </aside>
+        )}
+
         {match && !ended && (
           <RoleCard
             kind={match.role}
@@ -457,8 +581,10 @@ function RoomContent({
         )}
 
         {pointAction &&
-          pointing.targets.length > 0 &&
           (coarse ||
+          pointAction === "model" ||
+          pointAction === "link" ||
+          pointAction === "douse" ||
           pointAction === "electMayor" ||
           pointAction === "decideTie" ? (
             <TargetPicker
@@ -467,13 +593,31 @@ function RoomContent({
               selected={pointing.selected}
               ballots={pointAction === "wolf" ? match?.wolves : match?.ballots}
               passLabel={passLabels[pointAction]}
+              disabled={choicePending}
               onSelect={onSelect}
               onPass={onPass}
-            />
+            >
+              {match?.canIgnite && (
+                <button
+                  type="button"
+                  className="picker-pass"
+                  aria-pressed={match.selected === "ignite"}
+                  disabled={choicePending}
+                  onClick={() => submitChoice("ignite", "")}
+                >
+                  Embraser
+                </button>
+              )}
+            </TargetPicker>
           ) : (
-            <button type="button" className="chip pass" onClick={onPass}>
+            <button
+              type="button"
+              className="chip pass"
+              disabled={choicePending}
+              onClick={onPass}
+            >
               {passLabels[pointAction]}
-              <small> · clic droit</small>
+              {pointing.targets.length > 0 && <small> · clic droit</small>}
             </button>
           ))}
 
@@ -481,26 +625,13 @@ function RoomContent({
           <WitchTurn
             room={room}
             potions={match.potions}
+            disabled={choicePending}
             onHeal={(on) =>
-              void act(() =>
-                choose({
-                  ...credentials,
-                  action: "heal",
-                  target: on ? (match.potions?.attack ?? "") : "",
-                }),
-              )
+              submitChoice("heal", on ? (match.potions?.attack ?? "") : "")
             }
-            onDone={() =>
-              void act(() =>
-                choose({ ...credentials, action: "done", target: "" }),
-              )
-            }
-            onPoison={() => setPoisonAim(true)}
-            onClearPoison={() =>
-              void act(() =>
-                choose({ ...credentials, action: "poison", target: "" }),
-              )
-            }
+            onDone={() => submitChoice("done", "")}
+            onPoison={() => setPoisonWindow(actionWindow)}
+            onClearPoison={() => submitChoice("poison", "")}
           />
         )}
 
@@ -580,6 +711,8 @@ function RoomContent({
         <SettingsPanel touch={coarse} />
       </Drawer>
 
+      <Guide open={panel === "guide"} onClose={() => setPanel(null)} />
+
       {coarse && <RotatePrompt />}
 
       {reveal && match && (
@@ -597,6 +730,27 @@ function RoomContent({
                 .map(
                   (id) => room.members.find((member) => member.id === id)?.name,
                 )
+                .join(", ")}
+            </p>
+          )}
+          {match.partner && (
+            <p>
+              Ton lien ·{" "}
+              {room.members.find((member) => member.id === match.partner)?.name}
+            </p>
+          )}
+          {match.model && (
+            <p>
+              Ton modèle ·{" "}
+              {room.members.find((member) => member.id === match.model)?.name}
+            </p>
+          )}
+          {!!match.marks?.length && (
+            <p>
+              Cibles aspergées ·{" "}
+              {room.members
+                .filter((member) => match.marks?.includes(member.id))
+                .map((member) => member.name)
                 .join(", ")}
             </p>
           )}

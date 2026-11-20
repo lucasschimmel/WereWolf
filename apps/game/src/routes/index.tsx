@@ -1,19 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ConvexProvider, ConvexReactClient, useMutation } from "convex/react";
-import { ArrowRight, DoorOpen } from "lucide-react";
 import {
-  type FormEvent,
-  lazy,
-  Suspense,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+  ArrowRight,
+  BookOpen,
+  DoorOpen,
+  GraduationCap,
+  Settings2,
+} from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { characters } from "../../shared/rules";
 import { Room } from "../rooms/Room";
+import { roomMap } from "../scene/maps";
+import Village from "../scene/Village";
 import { errorMessage, guestKey, session } from "../session";
+import { Drawer, SettingsPanel } from "../ui/controls";
 import { enterLandscape, suggestInstall, useCoarse } from "../ui/device";
+import { Guide } from "../ui/Guide";
 import { LookPicker } from "../ui/LookPicker";
 
 export const Route = createFileRoute("/")({
@@ -24,7 +27,6 @@ export const Route = createFileRoute("/")({
   }),
 });
 
-const Village = lazy(() => import("../scene/Village"));
 const url = import.meta.env.VITE_CONVEX_URL;
 const client = url ? new ConvexReactClient(url) : undefined;
 const noop = () => undefined;
@@ -67,8 +69,11 @@ function Gate() {
   const [active, setActive] = useState<{ code: string; key: string }>();
   const [resume, setResume] = useState<string>();
   const [error, setError] = useState("");
-  const [pending, setPending] = useState<"create" | "join">();
+  const [pending, setPending] = useState<"create" | "join" | "solo">();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const create = useMutation(api.rooms.create);
+  const createSolo = useMutation(api.rooms.createSolo);
   const join = useMutation(api.rooms.join);
   const coarse = useCoarse();
   const [install, setInstall] = useState(false);
@@ -83,8 +88,11 @@ function Gate() {
     setLook(storedLook());
   }, [invite]);
 
+  // A different village greets every visit to the hub.
+  const [map] = useState(() => roomMap(`hub-${Date.now()}`));
   const scene = useMemo(
     () => ({
+      map,
       showcase: false,
       me: "hub",
       members: [
@@ -102,7 +110,7 @@ function Gate() {
       targets: [],
       onSelect: noop,
     }),
-    [name, look],
+    [name, look, map],
   );
 
   function enter(room: string, key: string) {
@@ -115,7 +123,7 @@ function Gate() {
     setLook(next);
     localStorage.setItem(lookKey, String(next));
   }
-  async function submit(intent: "create" | "join") {
+  async function submit(intent: "create" | "join" | "solo") {
     // Still inside the tap: the only moment a phone lets us go full screen.
     void enterLandscape();
     setPending(intent);
@@ -126,7 +134,10 @@ function Gate() {
       const room =
         intent === "create"
           ? await create({ key, name, character: look })
-          : await join({ key, name, code, character: look });
+          : intent === "solo"
+            ? await createSolo({ key, name, character: look })
+            : await join({ key, name, code, character: look });
+      setGuideOpen(false);
       enter(room, key);
     } catch (cause) {
       setError(errorMessage(cause));
@@ -146,6 +157,7 @@ function Gate() {
         back={(forget) => {
           if (forget) session.remove(active.code);
           setResume(session.last());
+          setSettingsOpen(false);
           setActive(undefined);
           void navigate({ search: { room: undefined }, replace: true });
         }}
@@ -154,13 +166,28 @@ function Gate() {
   const named = name.trim().length > 0;
   return (
     <main className="game hub">
-      <Suspense
-        fallback={<div className="stage-loading">La place s’éveille…</div>}
-      >
-        <Village {...scene} />
-      </Suspense>
+      <Village {...scene} />
       <div className="hud">
         <p className="wordmark">WereWolf</p>
+        <div className="corner-right">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Comment jouer"
+            onClick={() => setGuideOpen(true)}
+          >
+            <BookOpen size={18} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Réglages"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Settings2 size={18} />
+          </button>
+        </div>
 
         <section className="panel side left" aria-labelledby="hub-me">
           <h2 id="hub-me">Toi</h2>
@@ -187,6 +214,15 @@ function Gate() {
             onClick={() => void submit("create")}
           >
             {pending === "create" ? "Ouverture…" : "Créer un salon"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!named || !!pending}
+            onClick={() => void submit("solo")}
+          >
+            <GraduationCap size={16} />{" "}
+            {pending === "solo" ? "Ouverture…" : "Jouer en solo"}
           </button>
           <p className="divider">ou rejoindre</p>
           <form className="join" onSubmit={onJoin}>
@@ -215,6 +251,13 @@ function Gate() {
             </button>
           </form>
           {!named && <p className="hint">Choisis d’abord ton prénom.</p>}
+          <button
+            type="button"
+            className="link"
+            onClick={() => setGuideOpen(true)}
+          >
+            <BookOpen size={16} /> Comment jouer ?
+          </button>
           {error && (
             <p role="alert" className="error">
               {error}
@@ -247,6 +290,24 @@ function Gate() {
           )}
         </p>
       </div>
+      <Drawer
+        open={settingsOpen}
+        title="Réglages"
+        onClose={() => setSettingsOpen(false)}
+      >
+        <SettingsPanel touch={coarse} />
+      </Drawer>
+      <Guide
+        open={guideOpen}
+        onClose={() => setGuideOpen(false)}
+        onSolo={
+          named && !pending
+            ? () => {
+                void submit("solo");
+              }
+            : undefined
+        }
+      />
     </main>
   );
 }

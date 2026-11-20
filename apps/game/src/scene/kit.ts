@@ -52,12 +52,32 @@ function prismGeometry() {
   return geometry;
 }
 
+// The source meshes are never uploaded or transformed. Each builder owns its copy.
+let unitBox: T.BufferGeometry | undefined;
+let unitPrism: T.BufferGeometry | undefined;
+const unitBalls = new Map<number, T.BufferGeometry>();
+const unitCones = new Map<number, T.BufferGeometry>();
+
+function primitive(
+  cache: Map<number, T.BufferGeometry>,
+  key: number,
+  create: (key: number) => T.BufferGeometry,
+) {
+  let geometry = cache.get(key);
+  if (!geometry) {
+    geometry = flatten(create(key));
+    cache.set(key, geometry);
+  }
+  return geometry.clone();
+}
+
 /** Collects vertex-coloured primitives and merges them into one draw call. */
 export class Builder {
   private parts: T.BufferGeometry[] = [];
   constructor(
     private random: () => number = Math.random,
     private variance = 0.06,
+    private enabled = true,
   ) {}
   get size() {
     return this.parts.length;
@@ -69,6 +89,7 @@ export class Builder {
     rotation: Vec3 = [0, 0, 0],
     scale: Vec3 = [1, 1, 1],
   ) {
+    const shade = 1 + (this.random() - 0.5) * this.variance * 2;
     const part = flatten(geometry);
     matrix.compose(
       positionVector.set(...position),
@@ -77,7 +98,6 @@ export class Builder {
     );
     part.applyMatrix4(matrix);
     tint.set(color);
-    const shade = 1 + (this.random() - 0.5) * this.variance * 2;
     const count = part.attributes.position.count;
     const colors = new Float32Array(count * 3);
     for (let index = 0; index < count; index++) {
@@ -101,7 +121,9 @@ export class Builder {
     position: Vec3,
     rotation?: Vec3,
   ) {
-    return this.add(new T.BoxGeometry(...size), color, position, rotation);
+    if (!this.enabled) return this.skip();
+    unitBox ??= flatten(new T.BoxGeometry());
+    return this.add(unitBox.clone(), color, position, rotation, size);
   }
   cylinder(
     color: T.ColorRepresentation,
@@ -110,6 +132,7 @@ export class Builder {
     rotation?: Vec3,
     segments = 8,
   ) {
+    if (!this.enabled) return this.skip();
     return this.add(
       new T.CylinderGeometry(top, bottom, height, segments),
       color,
@@ -125,11 +148,17 @@ export class Builder {
     rotation?: Vec3,
     segments = 6,
   ) {
+    if (!this.enabled) return this.skip();
     return this.add(
-      new T.ConeGeometry(radius, height, segments),
+      primitive(
+        unitCones,
+        segments,
+        (sides) => new T.ConeGeometry(1, 1, sides),
+      ),
       color,
       position,
       rotation,
+      [radius, height, radius],
     );
   }
   ball(
@@ -139,10 +168,15 @@ export class Builder {
     rotation?: Vec3,
     detail = 0,
   ) {
+    if (!this.enabled) return this.skip();
     const scale: Vec3 =
       typeof radius === "number" ? [radius, radius, radius] : radius;
     return this.add(
-      new T.IcosahedronGeometry(1, detail),
+      primitive(
+        unitBalls,
+        detail,
+        (level) => new T.IcosahedronGeometry(1, level),
+      ),
       color,
       position,
       rotation,
@@ -156,7 +190,14 @@ export class Builder {
     position: Vec3,
     rotation?: Vec3,
   ) {
-    return this.add(prismGeometry(), color, position, rotation, size);
+    if (!this.enabled) return this.skip();
+    unitPrism ??= prismGeometry();
+    return this.add(unitPrism.clone(), color, position, rotation, size);
+  }
+  private skip() {
+    // Preserve the seeded layout when a profile omits these primitives.
+    this.random();
+    return this;
   }
   build() {
     if (!this.parts.length) return new T.BufferGeometry();
@@ -165,6 +206,24 @@ export class Builder {
     this.parts = [];
     merged.computeBoundingSphere();
     return merged;
+  }
+}
+
+/** Distance-based detail with hysteresis, independently of the viewport size. */
+export class SceneryLod extends T.LOD {
+  constructor(
+    near: T.Object3D,
+    far: T.Object3D,
+    private readonly distance: number,
+  ) {
+    super();
+    this.addLevel(near, 0);
+    this.addLevel(far, distance, 0.12);
+    far.visible = false;
+  }
+
+  setDetail(reduction: number) {
+    this.levels[1].distance = this.distance * (1 - reduction * 0.25);
   }
 }
 
@@ -231,6 +290,8 @@ export function softDot() {
 
 /** Disposes geometries and per-object materials under a root. */
 export function disposeTree(root: T.Object3D, shared: Set<T.Material>) {
+  const geometries = new Set<T.BufferGeometry>();
+  const materials = new Set(shared);
   root.traverse((node) => {
     if (
       node instanceof T.Mesh ||
@@ -238,12 +299,16 @@ export function disposeTree(root: T.Object3D, shared: Set<T.Material>) {
       node instanceof T.Sprite ||
       node instanceof T.LineSegments
     ) {
-      node.geometry.dispose();
+      if (!(node instanceof T.Sprite) && !geometries.has(node.geometry)) {
+        geometries.add(node.geometry);
+        node.geometry.dispose();
+      }
       const list = Array.isArray(node.material)
         ? node.material
         : [node.material];
       for (const material of list) {
-        if (shared.has(material)) continue;
+        if (materials.has(material)) continue;
+        materials.add(material);
         if ("map" in material && material.map instanceof T.Texture)
           material.map.dispose();
         material.dispose();

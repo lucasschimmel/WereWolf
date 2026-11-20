@@ -298,6 +298,7 @@ function drawLabel(label: Label) {
 
 export class PuppetFactory {
   private cache = new Map<number, Parts>();
+  private silhouettes = new Map<number, T.BufferGeometry>();
   readonly hitGeometry = new T.CylinderGeometry(0.5, 0.5, 2, 8).translate(
     0,
     1,
@@ -335,9 +336,31 @@ export class PuppetFactory {
     }
     return parts;
   }
+
+  silhouette(index: number) {
+    const safe =
+      ((index % characters.length) + characters.length) % characters.length;
+    let geometry = this.silhouettes.get(safe);
+    if (!geometry) {
+      const { color, trim } = characters[safe];
+      geometry = new Builder(rng(100 + safe), 0)
+        .cylinder(color, [0.23, 0.31, 0.65], [0, 1, 0], undefined, 6)
+        .ball(skins[safe % skins.length], 0.23, [0, 1.57, 0])
+        .ball(hairs[safe % hairs.length], [0.24, 0.16, 0.24], [0, 1.72, 0])
+        .box(trim, [0.44, 0.08, 0.37], [0, 1.24, 0])
+        .box(color, [0.67, 0.45, 0.19], [0, 0.99, 0])
+        .box(pants, [0.36, 0.59, 0.22], [0, 0.38, 0])
+        .box(boots, [0.39, 0.13, 0.31], [0, 0.1, -0.04])
+        .build();
+      this.silhouettes.set(safe, geometry);
+    }
+    return geometry;
+  }
+
   dispose() {
     for (const parts of this.cache.values())
       for (const geometry of Object.values(parts)) geometry.dispose();
+    for (const geometry of this.silhouettes.values()) geometry.dispose();
     this.hitGeometry.dispose();
     this.hitMaterial.dispose();
     this.ghostMaterial.dispose();
@@ -350,7 +373,9 @@ export type Gesture = "none" | "wave" | "point" | "cheer" | "mourn" | "sleep";
 
 export class Puppet {
   readonly root = new T.Group();
+  readonly hit: T.Mesh;
   private body = new T.Group();
+  private silhouette?: T.Mesh;
   private torso = new T.Group();
   private head = new T.Group();
   private armLeft = new T.Group();
@@ -377,7 +402,7 @@ export class Puppet {
   constructor(
     readonly id: string,
     readonly character: number,
-    factory: PuppetFactory,
+    private factory: PuppetFactory,
     private castShadow: boolean,
   ) {
     const parts = factory.parts(character);
@@ -406,15 +431,38 @@ export class Puppet {
     this.armRight.position.set(0.3, 0.56, 0);
     add(this.armLeft, parts.armLeft);
     add(this.armRight, parts.armRight);
-    const hit = new T.Mesh(factory.hitGeometry, factory.hitMaterial);
-    hit.userData.player = id;
-    this.root.add(hit);
+    this.hit = new T.Mesh(factory.hitGeometry, factory.hitMaterial);
+    this.hit.userData.player = id;
+    this.root.add(this.hit);
     this.shadow = new T.Mesh(factory.shadowGeometry, factory.shadowMaterial);
     this.shadow.position.y = 0.13;
     this.shadow.renderOrder = 1;
     this.shadow.visible = !castShadow;
     this.root.add(this.shadow);
     this.root.userData.player = id;
+  }
+
+  setDetail(camera: T.Vector3, distance: number, shadows: boolean) {
+    if (!this.root.visible) return;
+    const cutoff = this.body.visible ? distance : distance * 0.9;
+    const distant =
+      !this.falling &&
+      this.waveTimer <= 0 &&
+      (this.gesture === "none" || this.gesture === "sleep") &&
+      camera.distanceToSquared(this.position) > cutoff * cutoff;
+    this.body.visible = !distant;
+    this.shadow.visible = !this.ghost && !this.falling && (!shadows || distant);
+    if (distant && !this.silhouette) {
+      this.silhouette = new T.Mesh(
+        this.factory.silhouette(this.character),
+        this.solid,
+      );
+      this.root.add(this.silhouette);
+    }
+    if (this.silhouette) {
+      this.silhouette.visible = distant;
+      this.silhouette.material = this.ghost ? this.ghostMaterial : this.solid;
+    }
   }
 
   setLabel(label: Label | null) {

@@ -15,11 +15,14 @@ export function Drawer({
   title,
   onClose,
   children,
+  wide = false,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** A wider panel, for reading rather than for a short form. */
+  wide?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -36,7 +39,7 @@ export function Drawer({
         aria-label="Fermer"
         onClick={onClose}
       />
-      <aside className="drawer" aria-label={title}>
+      <aside className={wide ? "drawer wide" : "drawer"} aria-label={title}>
         <header>
           <h2>{title}</h2>
           <button

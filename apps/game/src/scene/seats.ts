@@ -6,6 +6,9 @@ const maxSeats = 15;
 const lit = new T.Color("#ffb45e").multiplyScalar(2.2);
 const dark = new T.Color("#1c1714");
 const hidden = new T.Matrix4().makeScale(0, 0, 0);
+const up = new T.Vector3(0, 1, 0);
+const unitScale = new T.Vector3(1, 1, 1);
+const postScale = new T.Vector3(1, 0.62, 1);
 
 /** Seat lanterns, stone markers, tombstones and target rings around the well. */
 export class Seats {
@@ -23,7 +26,11 @@ export class Seats {
   readonly aim: T.Mesh<T.RingGeometry, T.MeshBasicMaterial>;
   readonly hover: T.Mesh<T.RingGeometry, T.MeshBasicMaterial>;
   private matrix = new T.Matrix4();
+  private quaternion = new T.Quaternion();
+  private where = new T.Vector3();
+  private tilt = new T.Euler();
   private color = new T.Color();
+  private layoutCount = -1;
   count = 0;
 
   constructor(materials: Materials, haloMaterial: T.ShaderMaterial) {
@@ -58,12 +65,15 @@ export class Seats {
     this.plates = new T.InstancedMesh(plate, materials.solid, maxSeats);
     for (const mesh of [this.posts, this.heads, this.tombs, this.plates]) {
       mesh.frustumCulled = false;
+      mesh.count = 0;
       for (let index = 0; index < maxSeats; index++)
         mesh.setMatrixAt(index, hidden);
       this.group.add(mesh);
     }
     for (let index = 0; index < maxSeats; index++)
       this.heads.setColorAt(index, dark);
+    this.heads.instanceColor?.setUsage(T.DynamicDrawUsage);
+    this.tombs.instanceMatrix.setUsage(T.DynamicDrawUsage);
     const haloGeometry = new T.BufferGeometry();
     haloGeometry.setAttribute(
       "position",
@@ -71,7 +81,9 @@ export class Seats {
     );
     haloGeometry.setAttribute(
       "tint",
-      new T.BufferAttribute(new Float32Array(maxSeats * 3), 3),
+      new T.BufferAttribute(new Float32Array(maxSeats * 3), 3).setUsage(
+        T.DynamicDrawUsage,
+      ),
     );
     haloGeometry.setAttribute(
       "size",
@@ -122,6 +134,35 @@ export class Seats {
     return new T.Vector3(pose.x * 1.08, 0.3, pose.z * 1.08);
   }
 
+  private updateLayout(count: number) {
+    this.layoutCount = count;
+    const positions = this.halos.geometry.attributes
+      .position as T.BufferAttribute;
+    for (let index = 0; index < count; index++) {
+      const pose = seat(index, count);
+      const between = pose.yaw + Math.PI / Math.max(count, 8);
+      const x = Math.sin(between) * 7.35;
+      const z = Math.cos(between) * 7.35;
+      this.quaternion.setFromAxisAngle(up, pose.yaw);
+      this.where.set(x, 0, z);
+      this.matrix.compose(this.where, this.quaternion, postScale);
+      this.posts.setMatrixAt(index, this.matrix);
+      this.heads.setMatrixAt(index, this.matrix);
+      this.where.set(pose.x, 0, pose.z);
+      this.plates.setMatrixAt(
+        index,
+        this.matrix.compose(this.where, this.quaternion, unitScale),
+      );
+      positions.setXYZ(index, x, 1.06, z);
+    }
+    for (const mesh of [this.posts, this.heads, this.tombs, this.plates])
+      mesh.count = count;
+    for (const mesh of [this.posts, this.heads, this.plates])
+      mesh.instanceMatrix.needsUpdate = true;
+    this.halos.geometry.setDrawRange(0, count);
+    positions.needsUpdate = true;
+  }
+
   update(
     delta: number,
     time: number,
@@ -132,39 +173,19 @@ export class Seats {
   ) {
     this.count = count;
     this.group.visible = show;
-    const positions = this.halos.geometry.attributes
-      .position as T.BufferAttribute;
+    if (show && this.layoutCount !== count) this.updateLayout(count);
     const colors = this.halos.geometry.attributes.tint as T.BufferAttribute;
-    const quaternion = new T.Quaternion();
-    const scale = new T.Vector3();
-    const where = new T.Vector3();
-    const up = new T.Vector3(0, 1, 0);
-    for (let index = 0; index < maxSeats; index++) {
-      if (index >= count) {
-        for (const mesh of [this.posts, this.heads, this.tombs, this.plates])
-          mesh.setMatrixAt(index, hidden);
-        colors.setXYZ(index, 0, 0, 0);
-        continue;
-      }
-      const pose = seat(index, count);
-      const between = pose.yaw + Math.PI / Math.max(count, 8);
-      const out = { x: Math.sin(between), z: Math.cos(between) };
-      quaternion.setFromAxisAngle(up, pose.yaw);
-      where.set(out.x * 7.35, 0, out.z * 7.35);
-      this.posts.setMatrixAt(
-        index,
-        this.matrix.compose(where, quaternion, scale.set(1, 0.62, 1)),
-      );
-      this.heads.setMatrixAt(index, this.matrix);
-      where.set(pose.x, 0, pose.z);
-      this.plates.setMatrixAt(
-        index,
-        this.matrix.compose(where, quaternion, scale.set(1, 1, 1)),
-      );
-
+    const flameBlend = 1 - Math.exp(-delta * 3);
+    const riseBlend = 1 - Math.exp(-delta * 4);
+    let hasTombs = false;
+    for (let index = 0; index < count; index++) {
       const flameTarget = alive[index] ? 1 : 0;
-      this.flame[index] +=
-        (flameTarget - this.flame[index]) * (1 - Math.exp(-delta * 3));
+      this.flame[index] += (flameTarget - this.flame[index]) * flameBlend;
+      if (this.riseDelay[index] > 0) this.riseDelay[index] -= delta;
+      else
+        this.rise[index] +=
+          (this.riseTarget[index] - this.rise[index]) * riseBlend;
+      if (!show) continue;
       const flicker =
         0.92 +
         Math.sin(time * 9 + index * 3.1) * 0.05 +
@@ -173,29 +194,24 @@ export class Seats {
       this.heads.setColorAt(index, this.color);
       const glow = this.flame[index] * (0.25 + night * 0.9) * flicker;
       colors.setXYZ(index, 1 * glow, 0.62 * glow, 0.28 * glow);
-      positions.setXYZ(index, out.x * 7.35, 1.06, out.z * 7.35);
-
-      if (this.riseDelay[index] > 0) this.riseDelay[index] -= delta;
-      else
-        this.rise[index] +=
-          (this.riseTarget[index] - this.rise[index]) *
-          (1 - Math.exp(-delta * 4));
       const height = this.rise[index];
       if (height < 0.01) this.tombs.setMatrixAt(index, hidden);
       else {
-        where.set(pose.x * 1.08, (height - 1) * 0.9, pose.z * 1.08);
+        hasTombs = true;
+        const pose = seat(index, count);
+        this.where.set(pose.x * 1.08, (height - 1) * 0.9, pose.z * 1.08);
         const wobble = (1 - height) * Math.sin(time * 30) * 0.08;
-        quaternion.setFromEuler(new T.Euler(wobble, pose.yaw, 0));
+        this.quaternion.setFromEuler(this.tilt.set(wobble, pose.yaw, 0));
         this.tombs.setMatrixAt(
           index,
-          this.matrix.compose(where, quaternion, scale.set(1, 1, 1)),
+          this.matrix.compose(this.where, this.quaternion, unitScale),
         );
       }
     }
-    for (const mesh of [this.posts, this.heads, this.tombs, this.plates])
-      mesh.instanceMatrix.needsUpdate = true;
+    if (!show) return;
+    this.tombs.visible = hasTombs;
+    if (hasTombs) this.tombs.instanceMatrix.needsUpdate = true;
     if (this.heads.instanceColor) this.heads.instanceColor.needsUpdate = true;
-    positions.needsUpdate = true;
     colors.needsUpdate = true;
     const pulse = 1 + Math.sin(time * 5) * 0.06;
     this.aim.scale.setScalar(pulse);
@@ -209,18 +225,5 @@ export class Seats {
       this.riseTarget[index] === 1 &&
       this.rise[index] < 0.08
     );
-  }
-
-  dispose() {
-    for (const mesh of [this.posts, this.heads, this.tombs, this.plates]) {
-      mesh.geometry.dispose();
-      mesh.dispose();
-    }
-    this.headMaterial.dispose();
-    this.halos.geometry.dispose();
-    this.aim.geometry.dispose();
-    this.aim.material.dispose();
-    this.hover.geometry.dispose();
-    this.hover.material.dispose();
   }
 }

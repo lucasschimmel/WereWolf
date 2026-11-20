@@ -5,10 +5,9 @@ import {
   hiddenFloorSeconds,
   isNight,
   maskedSeconds,
+  matchSeconds,
   type Phase,
   revealsOnDeath,
-  secondsFor,
-  turnSeconds,
 } from "../shared/rules";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -17,6 +16,7 @@ import {
   advanceDayBallot,
   advanceNight,
   beginDebate,
+  dawnRequiresResolution,
   finishDeaths,
   finishElection,
   holderAlive,
@@ -33,6 +33,22 @@ export async function schedule(
 ) {
   await ctx.scheduler.runAt(end, internal.phases.advance, { id, revision });
 }
+/**
+ * Queues the bots of a solo match for the phase that just began. Each phase
+ * has its own revision, so a late call from a previous phase is a no-op.
+ */
+export async function scheduleBots(
+  ctx: MutationCtx,
+  id: Id<"matches">,
+  revision: number,
+  phase: Phase,
+) {
+  const delay = 1500 + Math.random() * 3500;
+  await ctx.scheduler.runAfter(delay, internal.bots.play, { id, revision });
+  if (phase === "debate")
+    await ctx.scheduler.runAfter(2500, internal.bots.chatter, { id, revision });
+}
+
 export const advance = internalMutation({
   args: { id: v.id("matches"), revision: v.number() },
   handler: async (ctx, { id, revision }) => {
@@ -55,10 +71,15 @@ export const advance = internalMutation({
         next = advanceNight(match);
         break;
       case "dawn":
-        next = match.hunter ? "dawnShot" : beginDebate(match);
+        next = dawnRequiresResolution(match) ? "dawnShot" : beginDebate(match);
         break;
       case "dawnShot":
-        finishDeaths(match, "Riposte du Chasseur");
+        finishDeaths(
+          match,
+          revealsOnDeath(match.settings)
+            ? "Riposte du Chasseur"
+            : "Résolution de l’aube",
+        );
         next = match.outcome ? "ended" : beginDebate(match);
         break;
       case "mayorElection":
@@ -86,26 +107,37 @@ export const advance = internalMutation({
     match.end = match.started + durationOf(match) * 1000;
     match.revision += 1;
     await ctx.db.replace(_id, match);
-    if (match.phase !== "ended")
+    if (match.phase !== "ended") {
       await schedule(ctx, _id, match.revision, match.end);
+      if (match.solo) await scheduleBots(ctx, _id, match.revision, match.phase);
+    }
   },
 });
 
 /**
- * Seconds allotted to the match's current phase or night turn. In hidden
- * modes a dead holder's slot is a short masked window picked at random.
+ * Multiplayer windows follow the public phase and its configured duration.
+ * Solo retains shorter empty night turns.
  */
 export function durationOf(match: Match, random: () => number = Math.random) {
-  if (isNight(match.phase) && match.turn) {
-    const masked =
-      !revealsOnDeath(match.settings) && !holderAlive(match, match.turn);
-    return masked ? maskedSeconds(random) : turnSeconds(match.turn);
-  }
-  return secondsFor(
-    match.phase,
-    Object.keys(match.seats).length,
-    match.settings.mode,
-  );
+  const { phase, turn, settings, solo } = match;
+  if (phase === "ended") return 0;
+  if (
+    solo &&
+    isNight(phase) &&
+    turn &&
+    !revealsOnDeath(settings) &&
+    !holderAlive(match, turn)
+  )
+    return maskedSeconds(random);
+  const timer =
+    phase === "night" || phase === "potions"
+      ? turn === "pack"
+        ? "pack"
+        : "night"
+      : phase === "dayShot" || phase === "dawnShot"
+        ? "shot"
+        : phase;
+  return matchSeconds(timer, Object.keys(match.seats).length, settings, solo);
 }
 
 const earlyPhases: ReadonlySet<Phase> = new Set([
@@ -129,6 +161,10 @@ export async function settleEarly(ctx: MutationCtx, id: Id<"matches">) {
   const match = await ctx.db.get(id);
   if (
     !match ||
+    (!match.solo &&
+      (isNight(match.phase) ||
+        match.phase === "dawnShot" ||
+        match.phase === "dayShot")) ||
     match.remaining !== undefined ||
     match.started === undefined ||
     !earlyPhases.has(match.phase) ||
@@ -153,7 +189,7 @@ export async function settleEarly(ctx: MutationCtx, id: Id<"matches">) {
 
 /**
  * Night sub-phases are reported as a single public `night` phase. The turn is
- * public; its length is not fixed (see `settleEarly` and `durationOf`).
+ * public. Multiplayer private-action windows use their full public duration.
  */
 export function publicTiming(match: Doc<"matches">) {
   return {

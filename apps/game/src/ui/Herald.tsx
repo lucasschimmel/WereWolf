@@ -3,6 +3,7 @@ import {
   cardFor,
   type Phase,
   type Role,
+  revealsOnDeath,
   type Settings,
 } from "../../shared/rules";
 import mayorArt from "../assets/cards/mayor.webp";
@@ -125,7 +126,15 @@ export function useHerald(
     }
     if (match.phase !== state.phase) {
       const make = headlines[match.phase];
-      if (make) push(match.phase === "night" ? 600 : 0, make(match.role));
+      if (
+        (match.phase === "dawnShot" || match.phase === "dayShot") &&
+        !revealsOnDeath(settings) &&
+        match.action !== "shot"
+      ) {
+        push(0, { title: "Résolution", tone: "calm" });
+      } else if (make) {
+        push(match.phase === "night" ? 600 : 0, make(match.role));
+      }
       if (match.phase === "night" || match.phase === "vote")
         navigator.vibrate?.(match.phase === "night" ? [30, 60, 30] : 40);
       state.phase = match.phase;

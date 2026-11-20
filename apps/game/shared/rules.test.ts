@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
+  cards,
+  characters,
+  customSettings,
   deckFor,
   defaultCustom,
   defaultSettings,
   earlyEndAt,
+  freeCharacter,
   hiddenFloorSeconds,
   maskedRange,
   maskedSeconds,
+  maxPlayers,
   minForMode,
   nightTurns,
   plurality,
@@ -37,6 +42,30 @@ describe("official room settings", () => {
     expect(() => deckFor(minForMode("chaos") - 1, settings)).toThrow();
     expect(deckFor(minForMode("chaos"), settings)).toContain("jester");
   });
+  test("ordinary roles are toggled independently and optional roles take villager seats", () => {
+    const settings = {
+      ...defaultSettings,
+      roleOverrides: { seer: false, guard: true, cupid: true },
+    };
+    const deck = deckFor(12, settings);
+    expect(deck).toHaveLength(12);
+    expect(deck).toContain("cupid");
+    expect(deck).toContain("guard");
+    expect(deck).toContain("witch");
+    expect(deck).not.toContain("seer");
+  });
+
+  test("a wolf variant uses one normal wolf seat", () => {
+    const deck = deckFor(13, {
+      ...defaultSettings,
+      mode: "chaos",
+      roleOverrides: { blackWolf: true },
+    });
+    expect(deck.filter((role) => role === "wolf")).toHaveLength(2);
+    expect(deck).toContain("blackWolf");
+    expect(deck).toContain("jester");
+    expect(deck).toContain("arsonist");
+  });
   test("shortens Express debates and preserves night lengths", () => {
     expect(secondsFor("debate", 10, "express")).toBeLessThan(
       secondsFor("debate", 10, "classic"),
@@ -44,6 +73,62 @@ describe("official room settings", () => {
     expect(secondsFor("night", 10, "express")).toBe(
       secondsFor("night", 10, "classic"),
     );
+  });
+});
+describe("custom room settings", () => {
+  test("deals exact role quantities and fills new seats with villagers", () => {
+    const settings = customSettings(true, { wolf: 2, seer: 2, guard: 0 });
+
+    expect(deckFor(8, settings)).toEqual([
+      "wolf",
+      "wolf",
+      "seer",
+      "seer",
+      "villager",
+      "villager",
+      "villager",
+      "villager",
+    ]);
+    expect(deckFor(9, settings)).toEqual([...deckFor(8, settings), "villager"]);
+  });
+
+  test("rejects a selected card that becomes unavailable after someone leaves", () => {
+    const settings = customSettings(true, { wolf: 2, blackWolf: 1 });
+    expect(() => deckFor(11, settings)).toThrow("indisponible");
+  });
+
+  test("rejects incompatible pack variants", () => {
+    const settings = customSettings(true, {
+      wolf: 2,
+      blackWolf: 1,
+      whiteWolf: 1,
+    });
+
+    expect(() => deckFor(12, settings)).toThrow("variante");
+  });
+
+  test("rejects a room configuration whose pack would start at parity", () => {
+    const settings = customSettings(true, { wolf: 4 });
+
+    expect(() => deckFor(8, settings)).toThrow();
+  });
+
+  test("rejects second copies of cards with a shared action state", () => {
+    const settings = customSettings(true, { wolf: 2, witch: 2 });
+
+    expect(() => deckFor(10, settings)).toThrow("Sorcière");
+  });
+
+  test("carries guaranteed legacy cards into the fixed deck", () => {
+    const deck = deckFor(12, {
+      ...defaultSettings,
+      mode: "custom",
+      options: { wolves: 2, chances: { blackWolf: 100, cupid: 30 } },
+    });
+
+    expect(deck).toContain("blackWolf");
+    expect(deck).not.toContain("cupid");
+    expect(deck.filter((role) => role === "wolf")).toHaveLength(1);
   });
 });
 describe("night turns", () => {
@@ -166,4 +251,44 @@ test("the pack wins when it reaches parity including the solitaire", () => {
 });
 test("an empty village ends in a draw", () => {
   expect(victory([])).toBe("draw");
+});
+
+describe("professions", () => {
+  test("there is one distinct profession for every seat", () => {
+    const names = new Set(characters.map(({ name }) => name));
+    const colors = new Set(characters.map(({ color }) => color));
+    expect(characters.length).toBeGreaterThanOrEqual(maxPlayers);
+    expect(names.size).toBe(characters.length);
+    expect(colors.size).toBe(characters.length);
+  });
+
+  test("no profession shares its name with a card", () => {
+    const strip = (name: string) =>
+      name.replace(/^(Le |La |L’)/, "").toLowerCase();
+    const cardNames = Object.values(cards).map(({ name }) => strip(name));
+    const clashes = characters.filter(({ name }) =>
+      cardNames.includes(strip(name)),
+    );
+    expect(clashes).toEqual([]);
+  });
+
+  test("keeps the preferred profession when nobody wears it", () => {
+    expect(freeCharacter([1, 2], 4)).toBe(4);
+  });
+
+  test("moves on to the next free profession when the preferred is taken", () => {
+    expect(freeCharacter([4, 5], 4)).toBe(6);
+  });
+
+  test("wraps around the list to find a free profession", () => {
+    const last = characters.length - 1;
+    expect(freeCharacter([last], last)).toBe(0);
+  });
+
+  test("finds the only free profession at an almost full table", () => {
+    const taken = characters
+      .map((_, index) => index)
+      .filter((index) => index !== 9);
+    expect(freeCharacter(taken, 0)).toBe(9);
+  });
 });

@@ -1,22 +1,43 @@
 import { v } from "convex/values";
 import { normalizePose } from "../shared/motion";
 import { recordPresence } from "../shared/presence";
-import { isDayBallot, isNight } from "../shared/rules";
-import { signTicket, ticketLifetime } from "../shared/ticket";
+import { isDayBallot, isNight, revealsOnDeath } from "../shared/rules";
 import { internal } from "./_generated/api";
-import { mutation, query } from "./_generated/server";
+import type { Doc } from "./_generated/dataModel";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { access, fail, roster } from "./access";
+import { applyChoice } from "./choices";
 import {
   alive,
-  camp,
   dayAbility,
-  inspect,
-  livingMayor,
   nightOrder,
+  nightSelection,
   turnAbility,
 } from "./engine";
-import { publicTiming, schedule, settleEarly } from "./phases";
-import { credentials, tabPresenceReport } from "./validators";
+import { publicTiming, schedule } from "./phases";
+import { huntsWithPack, packMembers, partnerOf, roleOf } from "./special";
+import { choiceAction, credentials, tabPresenceReport } from "./validators";
+
+function actionWindow(match: Doc<"matches">) {
+  return `${match._id}:${match.cycle}:${match.phase}:${match.turn ?? ""}`;
+}
+
+function movementScope(
+  room: Pick<Doc<"rooms">, "_id" | "expires">,
+  match: Doc<"matches"> | null,
+  player: string,
+) {
+  if (!match) return `${room._id}:lobby:${room.expires}`;
+  if (
+    (match.phase === "intro" || match.phase === "debate") &&
+    match.seats[player]?.alive
+  )
+    return actionWindow(match);
+}
+
+const choiceInterval = 120;
+const presenceWriteInterval = 250;
+const movementInterval = 150;
 
 export const view = query({
   args: credentials,
@@ -29,10 +50,11 @@ export const view = query({
       match?.events.flatMap((event) => event.deaths ?? []),
     );
     const members = players.map(
-      ({ _id, name, character, ready, seen, tabs }) => ({
+      ({ _id, name, character, ready, seen, bot, tabs }) => ({
         id: _id,
+        bot: bot === true,
         seen: seen ?? 0,
-        tabs,
+        tabs: tabs?.map(({ status, at }) => ({ status, at })),
         name,
         character,
         ready,
@@ -40,55 +62,99 @@ export const view = query({
         alive: !deaths.has(_id),
         role:
           match &&
-          (ended ||
-            (deaths.has(_id) &&
-              room.settings.mode !== "mystery" &&
-              (room.settings.mode !== "workshop" || room.settings.reveal)))
-            ? match.seats[_id].role
+          (ended || (deaths.has(_id) && revealsOnDeath(match.settings)))
+            ? roleOf(match, _id)
             : undefined,
       }),
     );
     const base = {
       code: room.code,
       settings: room.settings,
+      solo: room.solo ? { role: room.solo.role } : undefined,
       members,
       me: player._id,
       isHost,
+      movementScope: movementScope(room, match, player._id),
     };
     if (!match) return { ...base, match: null };
     const seat = match.seats[player._id];
+    const role = roleOf(match, player._id);
     const living = alive(match);
     const ballot = dayAbility(match, player._id);
     const shooting =
       (match.phase === "dayShot" || match.phase === "dawnShot") &&
       match.hunter === player._id;
-    const witch =
-      match.phase === "potions" && seat.alive && seat.role === "witch";
+    const shotDone = shooting && match.done === true;
+    const witch = match.phase === "potions" && seat.alive && role === "witch";
     const ability = turnAbility(match, player._id);
-    const targets = ballot?.targets ?? (shooting ? living : ability?.targets);
-    const mates =
-      seat.role === "wolf"
-        ? Object.keys(match.seats).filter((id) => camp(match, id) === "pack")
+    const targets =
+      ballot?.targets ?? (shooting && !shotDone ? living : ability?.targets);
+    const choice = ability ? nightSelection(match, player._id) : undefined;
+    const finishedPointing =
+      choice !== undefined &&
+      (ability?.action === "inspect" ||
+        ability?.action === "peek" ||
+        ability?.action === "link");
+    const mates = huntsWithPack(role)
+      ? seat.alive
+        ? packMembers(match)
+        : (seat.knownPack ??
+          packMembers(match).filter((id) => !match.seats[id].converted))
+      : [];
+    const ghosts =
+      role === "necromancer" && seat.alive && !ended ? [...deaths] : undefined;
+    const awake =
+      ability?.action === "wolf"
+        ? mates.filter((id) => id !== player._id && match.seats[id].alive)
+        : undefined;
+    const poisonTargets =
+      witch && seat.poison && !match.done
+        ? living.filter((id) => id !== player._id)
         : [];
+    const sceneActors = isNight(match.phase)
+      ? [
+          ...new Set([
+            player._id,
+            ...(finishedPointing ? [] : (targets ?? [])),
+            ...(awake ?? []),
+            ...(ghosts ?? []),
+            ...poisonTargets,
+          ]),
+        ]
+      : undefined;
     return {
       ...base,
       match: {
         ...publicTiming(match),
+        actionWindow:
+          ballot || (shooting && !shotDone) || ability || (witch && !match.done)
+            ? actionWindow(match)
+            : undefined,
         cycle: match.cycle,
         remaining: match.remaining,
         pauses: match.pauses,
         outcome: match.outcome,
+        winner: ended ? match.winner : undefined,
         events: match.events,
         audit: ended ? match.audit : undefined,
-        role: seat.role,
-        mayor: livingMayor(match),
+        role,
+        partner: partnerOf(match, player._id),
+        model: role === "wildChild" ? match.model : undefined,
+        ghosts,
+        awake,
+        sceneActors,
+        marks: role === "arsonist" ? match.marks : undefined,
+        canIgnite: ability?.action === "douse" && !!match.marks?.length,
+        linkCount:
+          ability?.action === "link" ? (match.lovers?.length ?? 0) : undefined,
+        mayor:
+          match.mayor && !deaths.has(match.mayor) ? match.mayor : undefined,
         nightOrder: isNight(match.phase) ? nightOrder(match) : undefined,
         intel: seat.intel,
         mates,
-        wolves:
-          ability?.action === "wolf"
-            ? Object.fromEntries(mates.map((id) => [id, match.night[id] ?? ""]))
-            : undefined,
+        wolves: awake
+          ? Object.fromEntries(awake.map((id) => [id, match.night[id] ?? ""]))
+          : undefined,
         ballots: isDayBallot(match.phase)
           ? Object.fromEntries(
               Object.entries(match.votes).filter(
@@ -97,21 +163,19 @@ export const view = query({
             )
           : undefined,
         action:
-          ballot?.action ?? (shooting ? ("shot" as const) : ability?.action),
-        targets,
+          ballot?.action ??
+          (shooting && !shotDone ? ("shot" as const) : ability?.action),
+        shotDone,
+        targets: finishedPointing ? undefined : targets,
         selected: ballot
           ? match.votes[player._id]
           : shooting
             ? match.shot
-            : ability
-              ? match.night[player._id]
-              : undefined,
+            : choice,
         potions: witch
           ? {
               attack: seat.heal ? match.attack : "",
-              targets: seat.poison
-                ? living.filter((id) => id !== player._id)
-                : [],
+              targets: poisonTargets,
               heal: match.heal,
               poison: match.poison,
               done: match.done === true,
@@ -126,97 +190,24 @@ export const choose = mutation({
   args: {
     ...credentials,
     target: v.string(),
-    action: v.union(
-      v.literal("vote"),
-      v.literal("electMayor"),
-      v.literal("decideTie"),
-      v.literal("shot"),
-      v.literal("wolf"),
-      v.literal("inspect"),
-      v.literal("peek"),
-      v.literal("protect"),
-      v.literal("activity"),
-      v.literal("heal"),
-      v.literal("poison"),
-      v.literal("done"),
-    ),
+    action: choiceAction,
+    window: v.string(),
   },
-  handler: async (ctx, { code, key, target, action }) => {
+  handler: async (ctx, { code, key, target, action, window }) => {
     const { room, player } = await access(ctx, code, key);
     const match = room.match ? await ctx.db.get(room.match) : null;
-    if (!match || match.end <= Date.now())
+    const now = Date.now();
+    if (!match || match.end <= now || window !== actionWindow(match))
       fail("Cette fenêtre d’action est terminée.");
-    const id = player._id;
-    const seat = match.seats[id];
-    if (action === "shot") {
-      if (
-        (match.phase !== "dayShot" && match.phase !== "dawnShot") ||
-        match.hunter !== id ||
-        (target && !match.seats[target]?.alive)
-      )
-        fail("Riposte indisponible.");
-      await ctx.db.patch(match._id, { shot: target, done: true });
-      await settleEarly(ctx, match._id);
-      return;
-    }
-    if (!seat.alive) fail("Tu observes la partie.");
     if (
-      action === "vote" ||
-      action === "electMayor" ||
-      action === "decideTie"
-    ) {
-      const ballot = dayAbility(match, id);
-      if (
-        ballot?.action !== action ||
-        (target && !ballot.targets.includes(target))
-      )
-        fail("Vote invalide.");
-      await ctx.db.patch(match._id, {
-        votes: { ...match.votes, [id]: target },
-      });
-      await settleEarly(ctx, match._id);
-      return;
-    }
-    if (action === "heal" || action === "poison" || action === "done") {
-      if (match.phase !== "potions" || seat.role !== "witch")
-        fail("Potions indisponibles.");
-      if (action === "done") {
-        await ctx.db.patch(match._id, { done: true });
-        await settleEarly(ctx, match._id);
-        return;
-      }
-      if (action === "heal") {
-        if (target && (!seat.heal || target !== match.attack))
-          fail("Remède indisponible.");
-        await ctx.db.patch(match._id, { heal: !!target });
-        await settleEarly(ctx, match._id);
-        return;
-      }
-      if (
-        target &&
-        (!seat.poison || target === id || !match.seats[target]?.alive)
-      )
-        fail("Poison indisponible.");
-      await ctx.db.patch(match._id, { poison: target });
-      await settleEarly(ctx, match._id);
-      return;
-    }
-    const ability = turnAbility(match, id);
-    if (
-      ability?.action !== action ||
-      (target && !ability.targets.includes(target))
+      action !== "done" &&
+      action !== "link" &&
+      player.lastChoice !== undefined &&
+      now - player.lastChoice < choiceInterval
     )
-      fail("Ce n’est pas ton tour, ou cette cible est indisponible.");
-    if (action === "inspect" || action === "peek") {
-      if (match.night[id] !== undefined) fail("Tu as déjà joué ce tour.");
-      const { _id, _creationTime, ...next } = match;
-      inspect(next, id, target);
-      await ctx.db.patch(_id, { night: next.night, seats: next.seats });
-      await settleEarly(ctx, _id);
-      return;
-    }
-    await ctx.db.patch(match._id, { night: { ...match.night, [id]: target } });
-    await settleEarly(ctx, match._id);
+      fail("Attends un instant avant de rejouer.");
+    await applyChoice(ctx, match, player._id, target, action);
+    await ctx.db.patch(player._id, { lastChoice: now });
   },
 });
 
@@ -247,7 +238,29 @@ export const pause = mutation({
   },
 });
 
-import { internalMutation } from "./_generated/server";
+const skippable = new Set(["intro", "dawn", "debate"]);
+
+/** Solo only: moves on from a waiting phase (intro, dawn, debate) at once. */
+export const skip = mutation({
+  args: credentials,
+  handler: async (ctx, { code, key }) => {
+    const { room, isHost } = await access(ctx, code, key);
+    const match = room.match ? await ctx.db.get(room.match) : null;
+    if (
+      !isHost ||
+      !room.solo ||
+      !match ||
+      match.remaining !== undefined ||
+      !skippable.has(match.phase)
+    )
+      fail("Impossible de passer cette étape.");
+    const revision = match.revision + 1;
+    const end = Date.now();
+    await ctx.db.patch(match._id, { revision, end });
+    await schedule(ctx, match._id, revision, end);
+  },
+});
+
 export const resume = internalMutation({
   args: { id: v.id("matches"), revision: v.number() },
   handler: async (ctx, { id, revision }) => {
@@ -265,41 +278,37 @@ export const resume = internalMutation({
 });
 
 export const positions = query({
-  args: credentials,
-  handler: async (ctx, { code, key }) => {
-    const { room } = await access(ctx, code, key);
+  args: { ...credentials, scope: v.string() },
+  handler: async (ctx, { code, key, scope }) => {
+    const { room, player } = await access(ctx, code, key);
     const match = room.match ? await ctx.db.get(room.match) : null;
-    if (match && match.phase !== "intro" && match.phase !== "debate") return [];
+    if (scope !== movementScope(room, match, player._id)) return [];
     return (
       await ctx.db
         .query("positions")
         .withIndex("by_room", (q) => q.eq("room", room._id))
         .collect()
-    ).map(({ player, x, z, yaw, updated }) => ({ player, x, z, yaw, updated }));
+    )
+      .filter(
+        (row) =>
+          row.scope === scope && (!match || match.seats[row.player]?.alive),
+      )
+      .map(({ player, x, z, yaw, updated }) => ({
+        player,
+        x,
+        z,
+        yaw,
+        updated,
+      }));
   },
 });
 
-/**
- * A short-lived ticket to join this room on the movement relay, or null when
- * no relay is configured (clients then fall back to `move`/`positions`).
- */
+/** The retired relay no longer issues tickets. */
 export const ticket = mutation({
   args: credentials,
   handler: async (ctx, { code, key }) => {
-    const { room, player } = await access(ctx, code, key);
-    const secret = process.env.RELAY_SECRET;
-    if (!secret) return null;
-    return {
-      room: room._id,
-      ticket: await signTicket(
-        {
-          room: room._id,
-          player: player._id,
-          exp: Date.now() + ticketLifetime,
-        },
-        secret,
-      ),
-    };
+    await access(ctx, code, key);
+    return null;
   },
 });
 
@@ -309,6 +318,8 @@ export const beat = mutation({
   handler: async (ctx, { code, key, report }) => {
     const { player } = await access(ctx, code, key);
     const at = Date.now();
+    if (player.seen !== undefined && at - player.seen < presenceWriteInterval)
+      return;
     if (!report) {
       await ctx.db.patch(player._id, { seen: at });
       return;
@@ -326,16 +337,17 @@ export const beat = mutation({
 });
 
 export const move = mutation({
-  args: { ...credentials, x: v.number(), z: v.number(), yaw: v.number() },
-  handler: async (ctx, { code, key, x, z, yaw }) => {
+  args: {
+    ...credentials,
+    scope: v.string(),
+    x: v.number(),
+    z: v.number(),
+    yaw: v.number(),
+  },
+  handler: async (ctx, { code, key, scope, x, z, yaw }) => {
     const { room, player } = await access(ctx, code, key);
     const match = room.match ? await ctx.db.get(room.match) : null;
-    if (
-      match &&
-      ((match.phase !== "intro" && match.phase !== "debate") ||
-        !match.seats[player._id].alive)
-    )
-      return;
+    if (scope !== movementScope(room, match, player._id)) return;
     const pose = normalizePose({ x, z, yaw, t: 0 });
     if (!pose) return;
     const previous = await ctx.db
@@ -343,10 +355,12 @@ export const move = mutation({
       .withIndex("by_player", (q) => q.eq("player", player._id))
       .unique();
     const updated = Date.now();
-    // Clients send at most every 200 ms and repeat their pose while idle, so
-    // dropping a burst here never leaves a stale position for long.
-    if (previous && updated - previous.updated < 50) return;
-    const row = { x: pose.x, z: pose.z, yaw: pose.yaw, updated };
+    if (
+      previous?.scope === scope &&
+      updated - previous.updated < movementInterval
+    )
+      return;
+    const row = { scope, x: pose.x, z: pose.z, yaw: pose.yaw, updated };
     if (previous) await ctx.db.patch(previous._id, row);
     else
       await ctx.db.insert("positions", {

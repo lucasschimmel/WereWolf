@@ -506,10 +506,27 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+.look-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.look-name small {
+  color: var(--bone-faint);
+  font-size: 0.82rem;
+}
+
 .swatches {
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 5px;
+}
+
+.swatches button:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }
 
 .swatches button {
@@ -1043,10 +1060,11 @@ button.tcg:hover {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: safe center;
+  justify-content: safe center;
   gap: 48px;
   padding: 120px var(--gutter) 80px;
+  overflow: auto;
 }
 
 .turn-card {
@@ -1281,6 +1299,253 @@ button.tcg:hover {
   padding: 0 20px calc(20px + var(--safe-bottom));
 }
 
+.drawer.wide {
+  width: min(560px, 100%);
+}
+
+/* ---------- How to play ---------- */
+
+.guide {
+  display: grid;
+  gap: 16px;
+  line-height: 1.45;
+}
+
+.guide h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}
+
+.guide p {
+  margin: 0;
+}
+
+.guide-lead {
+  color: var(--bone-dim);
+}
+
+.guide-tabs {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.guide-tabs button {
+  flex: none;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(239, 230, 211, 0.08);
+  font-weight: 700;
+}
+
+.guide-tabs button[aria-selected="true"] {
+  background: var(--bone);
+  color: var(--ink);
+}
+
+.guide-section,
+.guide-steps,
+.guide-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-list li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--bone-dim);
+}
+
+.guide-list li::before {
+  content: "";
+  position: absolute;
+  top: 0.6em;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ember);
+}
+
+.guide-camp {
+  --tone: var(--village);
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(239, 230, 211, 0.06);
+  box-shadow: inset 3px 0 0 var(--tone);
+}
+
+.guide-camp.pack {
+  --tone: var(--pack);
+}
+
+.guide-camp.solo {
+  --tone: var(--solo);
+}
+
+.guide-camp p {
+  color: var(--bone-dim);
+}
+
+.guide-steps {
+  counter-reset: step;
+}
+
+.guide-steps li {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 0 0 0 44px;
+  counter-increment: step;
+}
+
+.guide-steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ember);
+  color: var(--ember-ink);
+  font-weight: 800;
+}
+
+.guide-steps p {
+  color: var(--bone-dim);
+}
+
+.guide-cards {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guide-cards button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(239, 230, 211, 0.06);
+  text-align: left;
+}
+
+.guide-cards button:hover {
+  background: rgba(239, 230, 211, 0.1);
+}
+
+.guide-cards b {
+  font-family: var(--display);
+  font-size: 1.05rem;
+}
+
+.guide-cards span:not(.tag) {
+  color: var(--bone-dim);
+}
+
+.guide-cards small {
+  color: var(--bone-faint);
+  font-size: 0.92rem;
+}
+
+.tag {
+  justify-self: start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--village);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tag.pack {
+  background: var(--pack);
+}
+
+.tag.solo {
+  background: var(--solo);
+}
+
+.guide-modes,
+.guide-keys {
+  margin: 0;
+}
+
+.guide-modes div,
+.guide-keys div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.guide-modes dt,
+.guide-keys dt {
+  font-weight: 800;
+}
+
+.guide-modes dd,
+.guide-keys dd {
+  margin: 0;
+  color: var(--bone-dim);
+}
+
+.guide-preview {
+  z-index: 40;
+}
+
+/* ---------- Solo practice ---------- */
+
+.solo-setup {
+  display: grid;
+  gap: 12px;
+}
+
+.coach {
+  position: absolute;
+  right: calc(var(--gutter) + var(--safe-right));
+  bottom: calc(var(--gutter) + var(--safe-bottom));
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(340px, calc(100% - 2 * var(--gutter) - 150px));
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--bone-dim);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.coach svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--ember);
+}
+
+.coach p {
+  margin: 0;
+}
+
 /* ---------- Room chat ---------- */
 
 .chat-toggle {
@@ -1308,6 +1573,7 @@ button.tcg:hover {
 }
 
 .room-chat {
+  --tone: var(--ember);
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -1315,27 +1581,79 @@ button.tcg:hover {
   min-width: 0;
 }
 
-.chat-channels {
+.room-chat[data-channel="eliminated"],
+.chat-tabs [data-channel="eliminated"] {
+  --tone: var(--bone-dim);
+}
+
+.room-chat[data-channel="spirits"],
+.chat-tabs [data-channel="spirits"] {
+  --tone: var(--solo);
+}
+
+.chat-tabs {
   display: flex;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.chat-channels .chip {
+.chat-tabs button {
   position: relative;
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 38px;
+  border-radius: 9px;
+  color: var(--bone-faint);
+  font-weight: 700;
+  font-size: 0.92rem;
 }
 
-.chat-channels button[aria-pressed="true"] {
-  color: var(--ember);
-  box-shadow: inset 0 0 0 1px var(--ember);
+.chat-tabs button:hover {
+  color: var(--bone);
+}
+
+.chat-tabs button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--tone) 18%, transparent);
+  color: var(--tone);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 45%, transparent);
+}
+
+.chat-tabs .chat-unread {
+  top: 5px;
+  right: 7px;
+}
+
+.chat-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone) 10%, transparent);
+  color: var(--bone-dim);
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.chat-notice svg,
+.chat-empty svg {
+  flex: none;
+  color: var(--tone);
 }
 
 .chat-thread {
   flex: 1;
   min-height: 0;
+  margin: 0 -6px;
+  padding: 0 6px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -1344,44 +1662,147 @@ button.tcg:hover {
   outline-offset: -2px;
 }
 
+.chat-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  height: 100%;
+  margin: 0;
+  padding: 24px;
+  color: var(--bone-faint);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.chat-empty svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.8;
+}
+
 .chat-messages {
   display: grid;
-  gap: 8px;
+  gap: 14px;
   margin: 0;
-  padding: 0;
+  padding: 4px 0;
   list-style: none;
 }
 
-.chat-messages li {
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--ink);
-  overflow-wrap: anywhere;
+.chat-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
 }
 
-.chat-messages .chat-own {
-  border-left: 2px solid var(--ember);
+.chat-group.own {
+  justify-content: flex-end;
+}
+
+.chat-group .chat-avatar {
+  width: 30px;
+  height: 30px;
+  border-width: 2px;
+  margin-top: 2px;
+  background: var(--panel);
+  border-color: var(--tone);
+  color: var(--bone);
+  font-weight: 800;
+  font-size: 0.85rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.chat-group-body {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-width: 0;
+  max-width: 85%;
+}
+
+.own .chat-group-body {
+  justify-items: end;
 }
 
 .chat-meta {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.chat-meta time,
-.chat-status {
-  color: var(--bone-dim);
-  font-size: 0.9rem;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 0.85rem;
 }
 
 .chat-meta time {
-  flex-shrink: 0;
+  color: var(--bone-faint);
+  font-size: 0.8rem;
+}
+
+.chat-bubble {
+  margin: 0;
+  padding: 7px 12px;
+  border-radius: 4px 14px 14px 4px;
+  background: rgba(239, 230, 211, 0.08);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-bubble:nth-child(2) {
+  border-top-left-radius: 14px;
+}
+
+.chat-bubble:last-child {
+  border-bottom-left-radius: 14px;
+}
+
+.own .chat-bubble {
+  border-radius: 14px 4px 4px 14px;
+  background: color-mix(in srgb, var(--tone) 22%, transparent);
+}
+
+.own .chat-bubble:nth-child(2) {
+  border-top-right-radius: 14px;
+}
+
+.own .chat-bubble:last-child {
+  border-bottom-right-radius: 14px;
+}
+
+.chat-error {
+  margin: 0;
+}
+
+.chat-locked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--bone-dim);
+  font-size: 0.92rem;
+}
+
+.chat-locked svg {
+  flex: none;
+  color: var(--bone-faint);
+}
+
+.chat-locked span {
+  flex: 1;
+  min-width: 10em;
+}
+
+.chat-locked .chip {
+  min-height: 34px;
 }
 
 .chat-compose {
+  position: relative;
   display: flex;
   align-items: stretch;
   gap: 8px;
@@ -1391,10 +1812,29 @@ button.tcg:hover {
   flex: 1;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px 10px;
+  border-radius: 12px;
+  padding: 8px 12px;
   background: var(--ink);
   font-size: 1rem;
+}
+
+.chat-compose:has(.chat-counter) input {
+  padding-right: 44px;
+}
+
+.chat-compose input:focus-visible {
+  border-color: color-mix(in srgb, var(--tone) 70%, transparent);
+  outline: none;
+}
+
+.chat-counter {
+  position: absolute;
+  right: 64px;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--bone-faint);
+  font-size: 0.75rem;
+  pointer-events: none;
 }
 
 /* ---------- Roster and journal ---------- */
@@ -1512,7 +1952,8 @@ button.tcg:hover {
 /* ---------- Settings and Workshop ---------- */
 
 .settings,
-.workshop {
+.workshop,
+.match-configuration {
   display: grid;
   gap: 18px;
 }
@@ -1561,7 +2002,8 @@ button.tcg:hover {
   color: var(--bone-dim);
 }
 
-.workshop fieldset {
+.workshop fieldset,
+.match-configuration fieldset {
   display: grid;
   gap: 10px;
   margin: 0;
@@ -1571,7 +2013,8 @@ button.tcg:hover {
   background: rgba(239, 230, 211, 0.06);
 }
 
-.workshop legend {
+.workshop legend,
+.match-configuration legend {
   padding: 0;
   font-family: var(--display);
   font-weight: 700;
@@ -1584,7 +2027,8 @@ button.tcg:hover {
   font-size: 0.88rem;
 }
 
-.workshop fieldset p {
+.workshop fieldset p,
+.match-configuration fieldset p {
   color: var(--bone-dim);
   font-size: 0.92rem;
 }
@@ -1594,6 +2038,28 @@ button.tcg:hover {
   border-radius: 12px;
   background: rgba(239, 230, 211, 0.1);
   font-weight: 700;
+}
+
+.match-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 32px;
+}
+
+.match-setting small {
+  display: block;
+  color: var(--bone-dim);
+}
+
+.match-setting strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.match-setting select {
+  width: 4.5rem;
+  min-height: 40px;
 }
 
 /* ---------- Touch stick and toasts ---------- */

@@ -16,6 +16,8 @@ export default defineSchema({
     host: v.optional(v.id("players")),
     settings,
     match: v.optional(v.id("matches")),
+    /** Practice room: the other seats are bots. `role` is the card the host asked for. */
+    solo: v.optional(v.object({ role: v.optional(v.string()) })),
     expires: v.number(),
   })
     .index("by_code", ["code"])
@@ -26,6 +28,9 @@ export default defineSchema({
     name: v.string(),
     character: v.number(),
     ready: v.boolean(),
+    lastChoice: v.optional(v.number()),
+    /** Computer-controlled seat of a solo room. */
+    bot: v.optional(v.boolean()),
     /** Last heartbeat from clients using the original presence protocol. */
     seen: v.optional(v.number()),
     tabs: v.optional(
@@ -37,15 +42,18 @@ export default defineSchema({
   messages: defineTable({
     room: v.id("rooms"),
     match: v.optional(v.id("matches")),
+    spirits: v.optional(v.literal(true)),
     author: v.id("players"),
     name: v.string(),
     text: v.string(),
   })
     .index("by_room_match", ["room", "match"])
+    .index("by_room_match_spirits", ["room", "match", "spirits"])
     .index("by_author", ["author"]),
   positions: defineTable({
     room: v.id("rooms"),
     player: v.id("players"),
+    scope: v.optional(v.string()),
     x: v.number(),
     z: v.number(),
     yaw: v.number(),
@@ -69,6 +77,8 @@ export default defineSchema({
       v.string(),
       v.object({
         role,
+        converted: v.optional(v.boolean()),
+        knownPack: v.optional(v.array(v.string())),
         alive: v.boolean(),
         spent: v.boolean(),
         guard: v.string(),
@@ -78,8 +88,15 @@ export default defineSchema({
       }),
     ),
     votes: choices,
+    model: v.optional(v.string()),
+    lovers: v.optional(v.array(v.string())),
+    marks: v.optional(v.array(v.string())),
+    ignited: v.optional(v.boolean()),
+    infected: v.optional(v.boolean()),
+    winner: v.optional(v.string()),
     mayor: v.optional(v.string()),
     night: choices,
+    wolfPowers: v.optional(choices),
     runoff: v.array(v.string()),
     attack: v.string(),
     heal: v.boolean(),
@@ -91,6 +108,8 @@ export default defineSchema({
     audit: v.array(event),
     outcome: v.optional(outcome),
     pauses: v.number(),
+    /** Practice match: bots play and waiting phases are shortened. */
+    solo: v.optional(v.boolean()),
     remaining: v.optional(v.number()),
   }).index("by_room", ["room"]),
 });

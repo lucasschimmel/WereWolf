@@ -8,10 +8,11 @@ import {
   writeFileSync,
 } from "node:fs";
 import { resolve } from "node:path";
+import { loadEnvFile } from "node:process";
 import { ConvexHttpClient } from "convex/browser";
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import { api } from "../apps/game/convex/_generated/api.js";
-import { characters, maxPlayers } from "../apps/game/shared/rules.ts";
+import { maxPlayers } from "../apps/game/shared/rules.ts";
 
 export type RoomView = FunctionReturnType<typeof api.game.view>;
 type Action = FunctionArgs<typeof api.game.choose>["action"];
@@ -32,6 +33,7 @@ export class DevRoom {
     this.code = code.toUpperCase();
     if (!/^[A-Z2-9]{6}$/.test(this.code))
       throw new Error("Saisis le code à six caractères du salon.");
+    if (existsSync(config)) loadEnvFile(config);
     const url = process.env.VITE_CONVEX_URL;
     const deployment = process.env.CONVEX_DEPLOYMENT?.trim();
     if (!url || !deployment || !/^dev:[\w-]+$/.test(deployment))
@@ -90,7 +92,6 @@ export class DevRoom {
       this.save();
       await this.client.mutation(api.rooms.profile, {
         ...this.credential(bot),
-        character: (this.bots.length - 1) % characters.length,
         ready: true,
       });
       created.push(bot.name);
@@ -141,16 +142,23 @@ export class DevRoom {
 
   async act(
     name: string,
-    command: "play" | "pass" | "heal" | "poison",
+    command: "play" | "pass" | "heal" | "poison" | "done" | "ignite",
     input = "",
   ) {
     const view = await this.view(name);
     const match = view.match;
-    if (!match)
-      throw new Error("L’hôte doit lancer la partie dans le navigateur.");
+    if (!match?.actionWindow)
+      throw new Error("Ce joueur n’a pas d’action pendant cette phase.");
     let action: Action;
     let target = "";
-    if (command === "heal") {
+    if (command === "done" || (command === "pass" && match.potions)) {
+      if (!match.potions)
+        throw new Error("Ce joueur n’a pas de tour à valider.");
+      action = "done";
+    } else if (command === "ignite") {
+      if (!match.canIgnite) throw new Error("Aucune cible à embraser.");
+      action = "ignite";
+    } else if (command === "heal") {
       if (!match.potions?.attack) throw new Error("Aucun remède disponible.");
       action = "heal";
       target = input === "off" ? "" : match.potions.attack;
@@ -171,6 +179,7 @@ export class DevRoom {
       ...this.credential(this.bot(name)),
       action,
       target,
+      window: match.actionWindow,
     });
     console.log(
       `${name} · ${action} → ${view.members.find((member) => member.id === target)?.name ?? "passe"}`,
@@ -178,23 +187,30 @@ export class DevRoom {
   }
 
   async auto() {
-    const views = await this.views();
-    const plans = views.flatMap((view) => {
+    let acted = false;
+    for (const view of await this.views()) {
       const match = view.match;
-      if (
-        !match?.action ||
-        match.selected !== undefined ||
-        !match.targets?.length
-      )
-        return [];
-      const actor = view.members.find((member) => member.id === view.me);
-      const target =
-        match.targets[Math.floor(Math.random() * match.targets.length)];
-      return actor ? [{ actor: actor.name, target }] : [];
-    });
-    for (const { actor, target } of plans)
-      await this.act(actor, "play", target);
-    if (!plans.length) console.log("Aucune action automatique disponible.");
+      const actor = view.members.find((member) => member.id === view.me)?.name;
+      if (!actor || !match?.actionWindow || match.selected !== undefined)
+        continue;
+      if (match.potions) await this.act(actor, "done");
+      else if (match.canIgnite && !match.targets?.length)
+        await this.act(actor, "ignite");
+      else if (match.action) {
+        const targets = [...(match.targets ?? [])];
+        const count = match.action === "link" ? 2 - (match.linkCount ?? 0) : 1;
+        if (targets.length < count) await this.act(actor, "pass");
+        else {
+          for (let selected = 0; selected < count; selected++) {
+            const index = Math.floor(Math.random() * targets.length);
+            const [target] = targets.splice(index, 1);
+            await this.act(actor, "play", target);
+          }
+        }
+      } else continue;
+      acted = true;
+    }
+    if (!acted) console.log("Aucune action automatique disponible.");
   }
 
   async next() {

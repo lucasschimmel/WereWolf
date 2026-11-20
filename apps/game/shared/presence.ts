@@ -28,7 +28,11 @@ export function recordPresence(
 }
 
 export function presenceStatus(
-  member: { bot?: boolean; seen: number; tabs: TabPresence[] | undefined },
+  member: {
+    bot?: boolean;
+    seen: number;
+    tabs: Pick<TabPresence, "status" | "at">[] | undefined;
+  },
   now: number,
 ): PresenceStatus | undefined {
   if (member.bot) return undefined;

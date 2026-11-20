@@ -1,11 +1,8 @@
 import * as T from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import type { Outcome, Phase, Role } from "../../shared/rules";
 import type { MotionFeed } from "../net/motion";
 import { useControls } from "../store";
+import type { createBloom } from "./bloom";
 import { Cast, type SceneMember } from "./cast";
 import {
   followPose,
@@ -18,26 +15,45 @@ import {
   type View,
 } from "./choreography";
 import { type CameraPose, Director } from "./director";
-import { buildNature } from "./forest";
-import { haloField, haloMaterial, Motes, Particles, VoteArcs } from "./fx";
-import { buildVillage } from "./hamlet";
-import { Input } from "./input";
-import { Interior } from "./interior";
-import { createMaterials, disposeMaterials, disposeTree, softDot } from "./kit";
+import { Facades } from "./facades";
 import {
-  clampToPlaza,
-  dampAngle,
-  facing,
-  type Pose,
-  seat,
-  towerPosition,
-} from "./layout";
-import { PuppetFactory } from "./puppets";
-import { budgets, FrameGovernor, type Tier } from "./quality";
+  haloField,
+  haloMaterial,
+  Motes,
+  Particles,
+  setHalos,
+  VoteArcs,
+} from "./fx";
+import { Input } from "./input";
+import { Interior, interiorPose } from "./interior";
+import { disposeTree } from "./kit";
+import { clampToPlaza, dampAngle, facing, type Pose, seat } from "./layout";
+import type { MapChoice, MapDefinition } from "./maps/types";
+import {
+  type Budget,
+  budgets,
+  FrameGovernor,
+  pixelRatio,
+  type Tier,
+} from "./quality";
+import {
+  acquireSceneResources,
+  releaseSceneResources,
+  type SceneResources,
+} from "./resources";
 import { Seats } from "./seats";
 import { Atmosphere } from "./sky";
 
 export type { SceneMember };
+
+const showcaseFps = 30;
+const gameFps = 60;
+const shadowFps = 30;
+const shadowFocus = new T.Vector3();
+const smokeNight = new T.Color("#4a5064");
+const noAwake: string[] = [];
+const noAims: Record<string, string> = {};
+
 export type SceneEvent = {
   cycle: number;
   label: string;
@@ -45,6 +61,8 @@ export type SceneEvent = {
   votes?: Record<string, string>;
 };
 export type SceneState = {
+  /** Which map to build and the seed of its procedural details. */
+  map: MapChoice & { seats?: number };
   showcase: boolean;
   members: SceneMember[];
   me: string;
@@ -54,6 +72,7 @@ export type SceneState = {
   events: SceneEvent[];
   role?: Role;
   outcome?: Outcome;
+  winner?: string;
   targets: string[];
   selected?: string;
   /** True while this player must point at someone on the square at night. */
@@ -70,28 +89,35 @@ export type SceneState = {
 /** Owns the renderer and orchestrates the village, its puppets and the camera. */
 export class Stage {
   private renderer: T.WebGLRenderer;
+  private resources: SceneResources;
   private scene = new T.Scene();
   private camera = new T.PerspectiveCamera(55, 1, 0.1, 700);
-  private composer?: EffectComposer;
-  private bloom?: UnrealBloomPass;
+  private bloom?: ReturnType<typeof createBloom>;
+  private bloomRequested = false;
+  private disposed = false;
+  private contextLost = false;
+  private budget: Budget;
+  private targetFps: number;
+  private outdoors = new T.Group();
   private materials;
   private atmosphere: Atmosphere;
-  private village;
+  private world;
+  private facades: Facades;
   private seats: Seats;
-  private interior: Interior;
+  private interior?: Interior;
   private motes: Motes;
-  private smoke = new Particles(90, "#d9d4cc", 0.12, 2.6, 1.4);
-  private dust = new Particles(90, "#cdb894", -2.6, 1.3, 1);
+  private smoke?: Particles;
+  private dust: Particles;
   private arcs = new VoteArcs();
   private halos: T.Points;
   private pointMaterials: T.ShaderMaterial[];
-  private factory: PuppetFactory;
   private cast: Cast;
   private director = new Director();
   private input: Input;
   private governor: FrameGovernor;
   private observer: ResizeObserver;
   private raycaster = new T.Raycaster();
+  private pointer = new T.Vector2();
   private view: View = "village";
   private self: Pose = { x: 0, z: 7, yaw: 0 };
   private cameraYaw = 0;
@@ -112,92 +138,92 @@ export class Stage {
   private focusId?: string;
   private compact = false;
   private last = 0;
+  private nextFrame = 0;
+  private shadowAt = 0;
+  private width = 0;
+  private height = 0;
+  private dpr = 1;
+  private alive: boolean[] = [];
   private placed = false;
   private positions = new Map<string, Pose>();
 
   constructor(
     private container: HTMLElement,
-    private tier: Tier,
+    tier: Tier,
     private state: SceneState,
     private veil: HTMLElement,
+    private onContextChange: (lost: boolean) => void,
+    map: MapDefinition,
   ) {
     const budget = budgets[tier];
-    this.renderer = new T.WebGLRenderer({
-      antialias: budget.antialias,
-      powerPreference: "high-performance",
-    });
+    this.scene.matrixAutoUpdate = false;
+    this.outdoors.matrixAutoUpdate = false;
+    this.budget = budget;
+    this.targetFps = state.showcase ? showcaseFps : gameFps;
+    this.resources = acquireSceneResources(tier, map, state.map.seed);
+    const { renderer, materials, scenery, factory } = this.resources;
+    this.renderer = renderer;
     this.renderer.toneMapping = T.ACESFilmicToneMapping;
     this.renderer.shadowMap.enabled = budget.shadows;
     this.renderer.shadowMap.type = T.PCFSoftShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     this.governor = new FrameGovernor(
-      Math.min(window.devicePixelRatio, budget.dpr),
-      budget.dpr,
-      budget.bloom,
+      budget.bloom && this.renderer.extensions.has("EXT_color_buffer_float"),
+      this.targetFps,
     );
-    this.renderer.setPixelRatio(this.governor.dpr);
     const canvas = this.renderer.domElement;
     canvas.tabIndex = 0;
     canvas.setAttribute(
       "aria-label",
       "Village en 3D. ZQSD ou WASD pour marcher, glisser pour tourner la caméra.",
     );
-    container.prepend(canvas);
-
-    this.materials = createMaterials(tier);
-    this.atmosphere = new Atmosphere(this.scene, budget, this.materials);
-    this.village = buildVillage(budget, this.materials);
-    this.scene.add(this.village.group);
-    const avoid = [
-      { x: towerPosition.x, z: towerPosition.z, r: 4.6 },
-      { x: 0, z: 0, r: 11.4 },
-      ...this.village.group.children
-        .filter((child) => child instanceof T.LOD)
-        .map((child) => ({ x: child.position.x, z: child.position.z, r: 4.2 })),
-    ];
-    this.scene.add(buildNature(budget, this.materials, avoid).group);
+    this.materials = materials;
+    this.atmosphere = new Atmosphere(
+      this.scene,
+      budget,
+      this.materials,
+      map.mood,
+    );
+    this.world = scenery.world;
+    scenery.setDetail(0);
+    scenery.arrange(this.headCount(state));
+    this.facades = new Facades(materials);
     const halo = haloMaterial(1);
-    this.halos = haloField(this.village.glowSpots, halo);
+    this.halos = haloField(scenery.glowSpots, halo);
     const seatHalo = haloMaterial(1);
     this.seats = new Seats(this.materials, seatHalo);
-    this.interior = new Interior(this.scene, this.materials);
-    this.motes = new Motes(budget.motes);
-    this.scene.add(
+    this.motes = new Motes(budget.motes, map.motes);
+    this.dust = new Particles(
+      tier === "low" ? 36 : 90,
+      "#cdb894",
+      -2.6,
+      1.3,
+      1,
+    );
+    this.outdoors.add(
+      scenery.group,
       this.halos,
       this.seats.group,
       this.motes.points,
-      this.smoke.points,
       this.dust.points,
       this.arcs.group,
     );
+    this.scene.add(this.outdoors);
     this.pointMaterials = [
       halo,
       seatHalo,
       this.motes.points.material,
-      this.smoke.points.material,
       this.dust.points.material,
     ];
-    this.factory = new PuppetFactory(this.materials, softDot());
     this.cast = new Cast(
       this.scene,
-      this.factory,
+      factory,
       this.seats,
       this.dust,
       budget.shadows,
     );
-    if (state.showcase) this.cast.populateShowcase();
-
-    if (budget.bloom) {
-      this.composer = new EffectComposer(this.renderer);
-      this.composer.addPass(new RenderPass(this.scene, this.camera));
-      this.bloom = new UnrealBloomPass(
-        new T.Vector2(256, 256),
-        0.5,
-        0.55,
-        0.82,
-      );
-      this.composer.addPass(this.bloom);
-      this.composer.addPass(new OutputPass());
-    }
+    this.setState(state);
+    container.prepend(canvas);
     this.input = new Input(canvas, {
       tap: (x, y) => this.tap(x, y),
       pass: () => this.pass(),
@@ -207,26 +233,47 @@ export class Stage {
     this.observer.observe(container);
     this.resize();
     document.fonts?.ready.then(() => {
-      for (const puppet of this.cast.puppets.values()) puppet.setLabel(null);
+      if (this.disposed) return;
+      this.cast.refreshLabels();
     });
-    this.renderer.setAnimationLoop((time) => this.frame(time / 1000));
+    canvas.addEventListener("webglcontextlost", this.loseContext);
+    canvas.addEventListener("webglcontextrestored", this.restoreContext);
+    document.addEventListener("visibilitychange", this.updateLoop);
+    this.updateLoop();
   }
 
   setState(state: SceneState) {
+    if (state.motion !== this.state.motion) this.lastSent = undefined;
+    if (
+      this.alive.length !== state.members.length ||
+      this.state.members !== state.members
+    )
+      this.alive = state.members.map((member) => member.alive);
     this.state = state;
+  }
+
+  /** Seats the scenery is laid out for; the showcase shows a small table. */
+  private headCount(state: SceneState) {
+    return state.map.seats ?? (state.showcase ? 0 : state.members.length);
   }
 
   private resize() {
     const { clientWidth: width, clientHeight: height } = this.container;
     if (!width || !height) return;
     this.compact = width < 720;
-    this.renderer.setPixelRatio(this.governor.dpr);
-    this.renderer.setSize(width, height, false);
-    this.composer?.setPixelRatio(this.governor.dpr);
-    this.composer?.setSize(width, height);
+    const dpr =
+      pixelRatio(this.budget, width, height, window.devicePixelRatio) *
+      this.governor.scale;
+    if (this.width === width && this.height === height && this.dpr === dpr)
+      return;
+    this.width = width;
+    this.height = height;
+    this.dpr = dpr;
+    this.renderer.setDrawingBufferSize(width, height, dpr);
+    this.bloom?.resize(width, height, dpr);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    const scale = height * this.governor.dpr * 0.5;
+    const scale = height * dpr * 0.5;
     for (const material of this.pointMaterials)
       material.uniforms.uScale.value = scale;
   }
@@ -246,7 +293,7 @@ export class Stage {
     if (showcase)
       return orbitPose(time, this.orbit.offset, this.orbit.lift, 17);
     if (this.view === "interior") {
-      const pose = this.interior.pose;
+      const pose = interiorPose();
       pose.target.x += this.interiorLook.yaw * 2.2;
       pose.target.y += this.interiorLook.pitch * 1.6;
       return { ...pose, fov: this.compact ? 66 : 58 };
@@ -415,7 +462,7 @@ export class Stage {
     this.seatLook = 0;
     const shots = transition(previous, phase, {
       pose: () => this.desired(this.last),
-      interior: () => this.interior.pose,
+      interior: interiorPose,
       setView: (view) => {
         this.view = view;
       },
@@ -476,6 +523,7 @@ export class Stage {
 
   private get aimable() {
     return (
+      !this.contextLost &&
       !this.director.busy &&
       this.view === "village" &&
       this.state.targets.length > 0
@@ -513,14 +561,12 @@ export class Stage {
 
   private pick(x: number, y: number) {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.raycaster.setFromCamera(
-      new T.Vector2(
-        ((x - rect.left) / rect.width) * 2 - 1,
-        -((y - rect.top) / rect.height) * 2 + 1,
-      ),
-      this.camera,
+    this.pointer.set(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1,
     );
-    return this.cast.pick(this.raycaster);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    return this.cast.pick(this.raycaster, this.state.targets);
   }
 
   private hover(time: number) {
@@ -528,7 +574,7 @@ export class Stage {
     if (time - this.hoverAt < 0.1) return;
     this.hoverAt = time;
     const id =
-      point && !this.input.dragging && this.view === "village"
+      point && !this.input.dragging && this.aimable
         ? this.pick(point.x, point.y)
         : undefined;
     if (id) this.focusId = undefined;
@@ -564,40 +610,111 @@ export class Stage {
     (this.halos.material as T.ShaderMaterial).uniforms.uIntensity.value =
       0.12 + night * 0.9;
     this.motes.update(time, night);
-    this.smokeTimer -= delta;
-    if (this.smokeTimer < 0 && this.view === "village") {
-      this.smokeTimer = 0.14;
-      const chimney =
-        this.village.chimneys[
-          Math.floor(Math.random() * this.village.chimneys.length)
-        ];
-      this.smoke.emit(
-        chimney,
-        new T.Vector3(
-          0.25 + Math.random() * 0.2,
-          0.8 + Math.random() * 0.3,
-          (Math.random() - 0.5) * 0.2,
-        ),
-        4.5,
-        0.8,
-      );
-    }
-    this.smoke.color.set("#d9d4cc").lerp(new T.Color("#4a5064"), night);
-    this.smoke.update(delta);
+    if (this.smoke?.points.visible) this.updateSmoke(delta, night, this.smoke);
     this.dust.update(delta);
     this.arcs.update(time);
-    this.village.bell.rotation.x = Math.sin(time * 3.6) * this.bellSwing;
+    this.world.bell.rotation.x = Math.sin(time * 3.6) * this.bellSwing;
+    this.world.animate?.(time, night);
     this.bellSwing = Math.max(0, this.bellSwing - delta * 0.1);
-    if (this.bloom) this.bloom.strength = 0.22 + night * 0.5;
   }
 
-  private frame(now: number) {
-    const delta = T.MathUtils.clamp(now - (this.last || now), 0, 0.05);
+  private updateSmoke(delta: number, night: number, smoke: Particles) {
+    this.smokeTimer -= delta;
+    if (this.smokeTimer < 0) {
+      this.smokeTimer = 0.14;
+      const { chimneys } = this.resources.scenery;
+      if (chimneys.length)
+        smoke.emit(
+          chimneys[Math.floor(Math.random() * chimneys.length)],
+          new T.Vector3(
+            0.25 + Math.random() * 0.2,
+            0.8 + Math.random() * 0.3,
+            (Math.random() - 0.5) * 0.2,
+          ),
+          4.5,
+          0.8,
+        );
+    }
+    smoke.color.set("#d9d4cc").lerp(smokeNight, night);
+    smoke.update(delta);
+  }
+
+  private updateLoop = () => {
+    this.last = this.nextFrame = this.shadowAt = 0;
+    this.governor.resetSamples();
+    this.renderer.setAnimationLoop(
+      document.hidden || this.contextLost ? null : this.frame,
+    );
+  };
+
+  private loseContext = () => {
+    this.contextLost = true;
+    this.renderer.domElement.style.visibility = "hidden";
+    this.updateLoop();
+    this.onContextChange(true);
+  };
+
+  private restoreContext = () => {
+    this.contextLost = false;
+    this.renderer.domElement.style.visibility = "";
+    this.updateLoop();
+    this.onContextChange(false);
+  };
+
+  private applyDetail() {
+    const reduction = this.governor.detailReduction;
+    this.resources.scenery.setDetail(reduction);
+    this.motes.points.visible = reduction < 2;
+    if (this.smoke) this.smoke.points.visible = reduction === 0;
+    this.renderer.shadowMap.enabled = this.budget.shadows && reduction === 0;
+    this.atmosphere.setShadows(this.renderer.shadowMap.enabled);
+    if (!this.governor.bloom && this.bloom) {
+      this.bloom.dispose();
+      this.bloom = undefined;
+    }
+  }
+
+  private loadSmoke() {
+    this.smoke = new Particles(this.budget.smoke, "#d9d4cc", 0.12, 2.6, 1.4);
+    const material = this.smoke.points.material;
+    material.uniforms.uScale.value = this.height * this.dpr * 0.5;
+    this.pointMaterials.push(material);
+    this.outdoors.add(this.smoke.points);
+  }
+
+  private async loadBloom() {
+    this.bloomRequested = true;
+    try {
+      const { createBloom } = await import("./bloom");
+      if (this.contextLost) this.bloomRequested = false;
+      if (this.disposed || this.contextLost || !this.governor.bloom) return;
+      this.bloom = createBloom(this.renderer, this.scene, this.camera);
+      this.bloom.resize(this.width, this.height, this.dpr);
+    } catch (cause) {
+      if (this.disposed) return;
+      this.governor.bloom = false;
+      this.applyDetail();
+      console.warn("Could not initialize village bloom", cause);
+    }
+  }
+
+  private frame = (ms: number) => {
+    const now = ms / 1000;
+    const interval = 1 / this.targetFps;
+    if (now + 0.001 < this.nextFrame) return;
+    this.nextFrame = this.last
+      ? Math.max(this.nextFrame + interval, now)
+      : now + interval;
+    const elapsed = this.last ? now - this.last : 0;
+    const delta = Math.min(elapsed, 0.075);
     this.last = now;
     const state = this.state;
+    if (this.resources.scenery.arrange(this.headCount(state)))
+      setHalos(this.halos, this.resources.scenery.glowSpots);
+    this.facades.sync(this.world.homes, state.showcase ? [] : state.members);
     this.materials.time.value = now;
     this.choreograph(now);
-    this.cast.sync(state.members, state.phase, this.view, () =>
+    this.cast.sync(state.members, state.me, state.phase, this.view, () =>
       this.director.bump(0.12),
     );
     this.steer(delta, now);
@@ -613,28 +730,27 @@ export class Stage {
     const outside = this.view === "village";
     const { member } = this.me();
     const focus = outside
-      ? new T.Vector3(this.self.x, 0, this.self.z)
+      ? shadowFocus.set(this.self.x, 0, this.self.z)
       : this.camera.position;
     this.atmosphere.update(delta, this.camera, this.renderer, focus);
-    for (const object of [
-      this.village.group,
-      this.halos,
-      this.motes.points,
-      this.smoke.points,
-    ])
-      object.visible = outside;
+    this.atmosphere.setOutdoors(outside);
+    this.outdoors.visible = outside;
+    if (outside) this.cast.updateBurials(state.members.length);
     this.seats.update(
       delta,
       now,
       state.members.length,
-      state.members.map((entry) => entry.alive),
+      this.alive,
       this.atmosphere.night,
       outside && !state.showcase,
     );
-    this.interior.setRole(state.role);
-    this.interior.update(now, !outside);
+    if (!outside) {
+      this.interior ??= new Interior(this.scene, this.materials);
+      this.interior.setRole(state.role);
+    }
+    this.interior?.update(now, !outside);
     this.positions.clear();
-    if (state.motion)
+    if (outside && state.motion)
       for (const entry of state.members) {
         if (entry.id === state.me) continue;
         const pose = state.motion.sample(entry.id);
@@ -650,38 +766,65 @@ export class Stage {
       selected: state.selected,
       pointing: !!state.selected && !!member?.alive && state.targets.length > 0,
       outcome: state.outcome,
-      awake: state.awake ?? [],
-      aims: state.aims ?? {},
+      winner: state.winner,
+      awake: state.awake ?? noAwake,
+      aims: state.aims ?? noAims,
     });
+    if (this.governor.tick(elapsed)) {
+      this.applyDetail();
+      this.resize();
+    }
+    if (outside) this.updateOutdoors(delta, now);
+    if (this.bloom && outside) this.bloom.render(delta, this.atmosphere.night);
+    else this.renderer.render(this.scene, this.camera);
+    this.advanceLoading(outside, state.showcase);
+  };
+
+  private updateOutdoors(delta: number, now: number) {
+    const shadows = this.renderer.shadowMap.enabled;
+    this.cast.setDetail(
+      this.camera.position,
+      this.budget.puppetLod * (1 - this.governor.detailReduction * 0.15),
+      shadows,
+    );
     this.hover(now);
     this.rings();
     this.effects(delta, now);
-    this.renderer.shadowMap.autoUpdate = budgets[this.tier].shadows && outside;
-    if (this.governor.tick(delta)) this.resize();
-    if (this.composer && this.governor.bloom) this.composer.render(delta);
-    else this.renderer.render(this.scene, this.camera);
+    if (shadows && now + 0.001 >= this.shadowAt) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowAt = now + 1 / shadowFps;
+    }
+  }
+
+  private advanceLoading(outside: boolean, showcase: boolean) {
+    if (!outside) return;
+    const { scenery } = this.resources;
+    if (!scenery.loaded) scenery.loadBatch(this.governor.detailReduction);
+    else if (this.budget.smoke && !this.smoke && !this.governor.detailReduction)
+      this.loadSmoke();
+    else if (showcase && !this.cast.hasShowcase) this.cast.populateShowcase();
+    else if (this.governor.bloom && !this.bloomRequested) void this.loadBloom();
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
     this.renderer.setAnimationLoop(null);
+    document.removeEventListener("visibilitychange", this.updateLoop);
+    const canvas = this.renderer.domElement;
+    canvas.removeEventListener("webglcontextlost", this.loseContext);
+    canvas.removeEventListener("webglcontextrestored", this.restoreContext);
     this.observer.disconnect();
     this.input.dispose();
     this.cast.dispose();
     this.arcs.clear();
     this.atmosphere.dispose();
-    this.interior.dispose();
-    this.seats.dispose();
-    this.factory.dispose();
-    const shared = new Set<T.Material>([
-      this.materials.solid,
-      this.materials.wind,
-      this.materials.glow,
-    ]);
-    disposeTree(this.scene, shared);
-    disposeMaterials(this.materials);
-    this.composer?.dispose();
-    this.renderer.dispose();
-    this.renderer.forceContextLoss();
-    this.renderer.domElement.remove();
+    this.interior?.dispose(this.materials);
+    this.facades.dispose();
+    this.outdoors.remove(this.resources.scenery.group);
+    disposeTree(this.scene, this.resources.sharedMaterials);
+    this.bloom?.dispose();
+    canvas.remove();
+    releaseSceneResources(this.resources);
   }
 }
