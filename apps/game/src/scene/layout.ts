@@ -6,7 +6,6 @@ export const plazaRadius = 9.6;
 export const seatRadius = 6.3;
 export const wellRadius = 1.75;
 export const interiorOrigin = new T.Vector3(0, 0, 320);
-export const towerPosition = new T.Vector3(0, 0, -21.5);
 
 export function seat(index: number, count: number): Pose {
   const angle = (index * 2 * Math.PI) / Math.max(count, 8);
@@ -53,14 +52,4 @@ export function clampToPlaza(x: number, z: number) {
     return { x: x * scale, z: z * scale };
   }
   return { x, z };
-}
-
-export function terrainHeight(x: number, z: number) {
-  const distance = Math.hypot(x, z);
-  const rise = T.MathUtils.smoothstep(distance, 24, 70);
-  const hills =
-    Math.sin(x * 0.045 + 1.3) * Math.cos(z * 0.052 - 0.4) * 2.6 +
-    Math.sin(x * 0.11 - z * 0.08) * 0.9 +
-    Math.cos(z * 0.13 + x * 0.03) * 0.6;
-  return rise * (hills + 1.2 + (distance - 24) * 0.05);
 }

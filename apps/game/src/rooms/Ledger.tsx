@@ -6,18 +6,22 @@ import {
   type Settings,
 } from "../../shared/rules";
 import type { MatchView, Member, View } from "./model";
+import type { MemberPresence } from "./presence";
 
 export function Roster({
   room,
+  presence,
   onKick,
 }: {
   room: View;
+  presence: MemberPresence;
   onKick?: (id: Member["id"]) => void;
 }) {
   const playing = !!room.match;
   return (
     <ul className="roster">
       {room.members.map((member) => {
+        const status = presence.get(member.id);
         const look = characters[member.character] ?? characters[0];
         const card = member.role
           ? cardFor(member.role, room.settings)
@@ -45,6 +49,8 @@ export function Roster({
                   </>
                 )}
                 {playing ? (member.alive ? "En vie" : "Éliminé·e") : look.name}
+                {status === "inactive" && " · Inactif"}
+                {status === "disconnected" && " · Déconnecté"}
                 {room.match?.mayor === member.id && (
                   <b>
                     {" "}

@@ -1,6 +1,6 @@
 import * as T from "three";
 import type { Role } from "../../shared/rules";
-import { Builder, type Materials, rng } from "./kit";
+import { Builder, disposeTree, type Materials, rng } from "./kit";
 import { interiorOrigin } from "./layout";
 
 const plank = ["#6b4a35", "#5f412f", "#744f38", "#583c2b"];
@@ -275,6 +275,7 @@ export class Interior {
     });
 
     this.candle = new T.PointLight("#ffb46b", 0, 9, 1.4);
+    this.candle.visible = false;
     this.candle.position
       .copy(interiorOrigin)
       .add(new T.Vector3(0.55, 1.4, -1.2));
@@ -296,15 +297,10 @@ export class Interior {
     this.backdrop.material.color.set(role === "wolf" ? "#ff8f84" : "#ffffff");
   }
 
-  get pose() {
-    return {
-      position: interiorOrigin.clone().add(new T.Vector3(0.15, 1.38, 1.45)),
-      target: interiorOrigin.clone().add(new T.Vector3(-0.05, 1.12, -1.6)),
-    };
-  }
-
   update(time: number, active: boolean) {
+    if (!active && !this.group.visible) return;
     this.group.visible = active;
+    this.candle.visible = active;
     const flicker =
       0.85 + Math.sin(time * 11) * 0.08 + Math.sin(time * 27.3) * 0.05;
     this.candle.intensity = active ? 7 * flicker : 0;
@@ -312,9 +308,21 @@ export class Interior {
     this.glowMaterial.color.setScalar(2.2 + Math.sin(time * 2.4) * 0.5);
   }
 
-  dispose() {
+  dispose(materials: Materials) {
     this.scene.remove(this.group, this.candle);
-    this.backdrop.material.map?.dispose();
-    this.glowMaterial.dispose();
+    disposeTree(
+      this.group,
+      new Set(
+        Object.values(materials).filter((value) => value instanceof T.Material),
+      ),
+    );
+    this.candle.dispose();
   }
+}
+
+export function interiorPose() {
+  return {
+    position: interiorOrigin.clone().add(new T.Vector3(0.15, 1.38, 1.45)),
+    target: interiorOrigin.clone().add(new T.Vector3(-0.05, 1.12, -1.6)),
+  };
 }

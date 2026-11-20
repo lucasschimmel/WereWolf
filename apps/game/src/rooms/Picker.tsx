@@ -1,4 +1,5 @@
 import { Maximize, RotateCw } from "lucide-react";
+import type { ReactNode } from "react";
 import { characters } from "../../shared/rules";
 import { canLockLandscape, enterLandscape } from "../ui/device";
 import type { View } from "./model";
@@ -14,16 +15,20 @@ export function TargetPicker({
   selected,
   ballots,
   passLabel,
+  disabled,
   onSelect,
   onPass,
+  children,
 }: {
   room: View;
   targets: string[];
   selected?: string;
   ballots?: Record<string, string>;
   passLabel: string;
+  disabled?: boolean;
   onSelect: (id: string) => void;
   onPass: () => void;
+  children?: ReactNode;
 }) {
   const counts = new Map<string, number>();
   for (const target of Object.values(ballots ?? {}))
@@ -39,6 +44,7 @@ export function TargetPicker({
             <li key={member.id}>
               <button
                 type="button"
+                disabled={disabled}
                 aria-pressed={selected === member.id}
                 onClick={() => onSelect(member.id)}
               >
@@ -62,7 +68,13 @@ export function TargetPicker({
           );
         })}
       </ul>
-      <button type="button" className="picker-pass" onClick={onPass}>
+      {children}
+      <button
+        type="button"
+        className="picker-pass"
+        disabled={disabled}
+        onClick={onPass}
+      >
         {passLabel}
       </button>
     </section>

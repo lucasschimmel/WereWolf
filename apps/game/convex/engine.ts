@@ -1,5 +1,6 @@
 import {
   cardFor,
+  deckFor,
   isDayBallot,
   maxCycles,
   type NightTurn,
@@ -7,27 +8,52 @@ import {
   type Phase,
   plurality,
   revealsOnDeath,
+  roleChance,
   turnOf,
-  victory,
 } from "../shared/rules";
 import type { Doc } from "./_generated/dataModel";
+import {
+  convertWildChild,
+  finishPackAttack,
+  fireTargets,
+  huntsWithPack,
+  igniteChoice,
+  packMembers,
+  partnerOf,
+  roleOf,
+  setOutcome,
+  specialNightAbility,
+} from "./special";
 
 export type Match = Omit<Doc<"matches">, "_id" | "_creationTime">;
 export const skip = "";
 export const alive = (match: Match) =>
   Object.keys(match.seats).filter((id) => match.seats[id].alive);
 export const camp = (match: Match, id: string) =>
-  cardFor(match.seats[id].role, match.settings).camp;
+  cardFor(roleOf(match, id), match.settings).camp;
 const dealt = (match: Match, role: string) =>
   Object.values(match.seats).some((seat) => seat.role === role);
 export const hasWitch = (match: Match) => dealt(match, "witch");
+const masksHunter = (match: Match) =>
+  !match.solo &&
+  !revealsOnDeath(match.settings) &&
+  !match.settings.replaced.includes("hunter") &&
+  roleChance("hunter", Object.keys(match.seats).length, match.settings) > 0;
+
+export function dawnRequiresResolution(match: Match) {
+  return (
+    !!match.hunter ||
+    (masksHunter(match) && !!match.events.at(-1)?.deaths?.length)
+  );
+}
 export const deckTurns = (match: Match) =>
   nightTurns(Object.values(match.seats).map((seat) => seat.role));
 
 /** Living seats whose card owns `turn`. */
 export function turnHolders(match: Match, turn: NightTurn) {
   return alive(match).filter((id) => {
-    const role = match.seats[id].role;
+    const role = roleOf(match, id);
+    if (turn === "pack") return huntsWithPack(role);
     return turnOf(role) === turn || role === turn;
   });
 }
@@ -40,9 +66,28 @@ export const holderAlive = (match: Match, turn: NightTurn) =>
  * roles are revealed on death; hidden modes keep every dealt slot.
  */
 export function nightOrder(match: Match): NightTurn[] {
-  const turns: NightTurn[] = [...deckTurns(match)];
-  if (hasWitch(match)) turns.push("witch");
+  const possible =
+    !match.solo &&
+    match.settings.mode === "custom" &&
+    match.settings.options?.chances
+      ? deckFor(Object.keys(match.seats).length, match.settings, () => true)
+      : undefined;
+  const turns: NightTurn[] = (
+    possible ? nightTurns(possible) : deckTurns(match)
+  ).filter((turn) => turn !== "cupid" || match.cycle === 1);
+  if (possible ? possible.includes("witch") : hasWitch(match))
+    turns.push("witch");
   if (!revealsOnDeath(match.settings)) return turns;
+  if (possible) {
+    const announced = match.events.flatMap((event) => event.deaths ?? []);
+    const expiredTurns = new Set(
+      announced.map((id) => {
+        const role = roleOf(match, id);
+        return role === "witch" ? role : turnOf(role);
+      }),
+    );
+    return turns.filter((turn) => turn === "pack" || !expiredTurns.has(turn));
+  }
   return turns.filter((turn) => holderAlive(match, turn));
 }
 
@@ -60,7 +105,7 @@ export function isTurnComplete(match: Match): boolean {
       return holders.every((id) => {
         if (!nightAbility(match, id)) return true;
         // Wolves abstain with "" and the seer passes with "": both are keys.
-        return match.night[id] !== undefined;
+        return nightSelection(match, id) !== undefined;
       });
     }
     case "potions":
@@ -83,9 +128,25 @@ export function isTurnComplete(match: Match): boolean {
 
 /** The night ability of `id`, only while its turn is the current one. */
 export function turnAbility(match: Match, id: string) {
-  if (match.phase !== "night" || turnOf(match.seats[id].role) !== match.turn)
+  const role = roleOf(match, id);
+  if (match.phase === "intro" && role === "wildChild")
+    return {
+      action: "model",
+      targets: alive(match).filter((other) => other !== id),
+    } as const;
+  if (
+    match.phase !== "night" ||
+    (match.turn === "pack" ? !huntsWithPack(role) : turnOf(role) !== match.turn)
+  )
     return;
   return nightAbility(match, id);
+}
+
+export function nightSelection(match: Match, id: string) {
+  if (match.phase === "intro") return match.model;
+  return match.turn === "blackWolf" || match.turn === "whiteWolf"
+    ? match.wolfPowers?.[id]
+    : match.night[id];
 }
 
 /** Records a private observation and reveals it to the observer at once. */
@@ -105,28 +166,31 @@ export function inspect(match: Match, id: string, target: string) {
 export function nightAbility(match: Match, id: string) {
   const seat = match.seats[id];
   if (!seat.alive) return;
-  if (seat.role === "wolf")
+  const role = roleOf(match, id);
+  const living = alive(match);
+  if (role === "wolf" || (match.turn === "pack" && huntsWithPack(role)))
     return {
       action: "wolf",
-      targets: alive(match).filter((other) => camp(match, other) !== "pack"),
+      targets: living.filter((other) => !huntsWithPack(roleOf(match, other))),
     } as const;
-  if (seat.role === "seer")
+  if (role === "seer")
     return {
       action: "inspect",
       targets: alive(match).filter((other) => other !== id),
     } as const;
-  if (seat.role === "littleGirl")
+  if (role === "littleGirl")
     return {
       action: "peek",
       targets: alive(match).filter((other) => other !== id),
     } as const;
-  if (seat.role === "guard")
+  if (role === "guard")
     return {
       action: "protect",
       targets: alive(match).filter((other) => other !== seat.guard),
     } as const;
-  if (!seat.role.startsWith("custom:")) return;
-  const card = match.settings.custom[Number(seat.role.slice(7))];
+  if (!role.startsWith("custom:"))
+    return specialNightAbility(match, id, living);
+  const card = match.settings.custom[Number(role.slice(7))];
   if (
     (card.uses === "first" && match.cycle !== 1) ||
     (card.uses === "once" && seat.spent)
@@ -147,13 +211,16 @@ export function firstWindow(match: Match) {
   const ballots: Record<string, string> = {};
   const protectedIds = new Set<string>();
   for (const id of alive(match)) {
-    const ability = nightAbility(match, id);
     const target = match.night[id];
+    if (huntsWithPack(roleOf(match, id))) {
+      if (target) ballots[id] = target;
+      continue;
+    }
+    const ability = nightAbility(match, id);
     if (!ability) continue;
     if (ability.action === "protect") match.seats[id].guard = target || skip;
     if (!target) continue;
     match.seats[id].spent = true;
-    if (ability.action === "wolf") ballots[id] = target;
     if (ability.action === "protect") protectedIds.add(target);
     // Inspections are revealed during their own turn by `inspect`.
     if (ability.action === "activity") {
@@ -167,7 +234,11 @@ export function firstWindow(match: Match) {
   match.audit.push({
     cycle: match.cycle,
     label: "Actions de la nuit",
-    votes: { ...match.night },
+    votes: Object.fromEntries(
+      Object.entries(match.night).filter(
+        ([, target]) => target !== igniteChoice,
+      ),
+    ),
   });
 }
 
@@ -180,11 +251,16 @@ export function advanceNight(match: Match): Phase {
   if (match.phase === "night" || match.phase === "potions") {
     const order = nightOrder(match);
     const next = order[order.indexOf(match.turn ?? "pack") + 1];
+    if (
+      match.phase === "night" &&
+      match.turn !== "blackWolf" &&
+      (!next || next === "blackWolf" || next === "witch")
+    )
+      firstWindow(match);
     if (match.phase === "night" && next && next !== "witch") {
       match.turn = next;
       return "night";
     }
-    if (match.phase === "night") firstWindow(match);
     if (match.phase === "night" && next === "witch") {
       match.turn = "witch";
       return "potions";
@@ -196,16 +272,21 @@ export function advanceNight(match: Match): Phase {
   return "dawn";
 }
 export function kill(match: Match, targets: string[]) {
-  for (const id of new Set(targets)) {
+  const victims = new Set(targets);
+  for (const id of victims) {
     if (!id || !match.seats[id]?.alive) continue;
     match.seats[id].alive = false;
+    if (huntsWithPack(roleOf(match, id)))
+      match.seats[id].knownPack = packMembers(match);
     match.deaths.push(id);
-    if (match.seats[id].role === "hunter") match.hunter = id;
+    if (roleOf(match, id) === "hunter") match.hunter = id;
+    const partner = partnerOf(match, id);
+    if (partner) victims.add(partner);
   }
 }
 export function resolvePotions(match: Match) {
   const witch = Object.keys(match.seats).find(
-    (id) => match.seats[id].role === "witch",
+    (id) => roleOf(match, id) === "witch",
   );
   if (witch && match.heal) match.seats[witch].heal = false;
   if (witch && match.poison) match.seats[witch].poison = false;
@@ -217,14 +298,34 @@ export function resolvePotions(match: Match) {
     label: "Potions",
     votes: potionChoices,
   });
-  kill(match, [match.heal ? skip : match.attack, match.poison]);
+  const living = alive(match);
+  const fires = fireTargets(match, living);
+  const white = living.find((id) => roleOf(match, id) === "whiteWolf");
+  const betrayal = white ? match.wolfPowers?.[white] : undefined;
+  if (white && betrayal) match.seats[white].spent = true;
+  const otherDeaths = [match.poison, betrayal ?? skip, ...fires];
+  const attack = finishPackAttack(match, living, otherDeaths);
+  if (fires.length)
+    match.audit.push({
+      cycle: match.cycle,
+      label: "Embrasement",
+      deaths: fires,
+    });
+  if (betrayal)
+    match.audit.push({
+      cycle: match.cycle,
+      label: "Trahison du Loup Blanc",
+      deaths: [betrayal],
+    });
+  kill(match, [attack, ...otherDeaths]);
 }
 /**
  * Publishes the pending deaths. When a hunter is among them his shot is still
  * to come, so `match.hunter` is kept and the outcome is left to `finishDeaths`.
  */
 export function announceDeaths(match: Match, label: string) {
-  if (!match.hunter) return finishDeaths(match, label);
+  if (!match.hunter && !(masksHunter(match) && match.deaths.length))
+    return finishDeaths(match, label);
   match.events.push({ cycle: match.cycle, label, deaths: [...match.deaths] });
   match.deaths = [];
 }
@@ -240,7 +341,7 @@ export function finishDeaths(match: Match, label: string) {
   match.deaths = [];
   match.hunter = skip;
   match.shot = skip;
-  match.outcome ??= victory(alive(match).map((id) => camp(match, id)));
+  setOutcome(match, alive(match));
 }
 
 export function livingMayor(match: Match) {
@@ -292,7 +393,14 @@ export function finishElection(match: Match, random = Math.random): Phase {
 function finishVerdict(match: Match, target?: string): Phase {
   if (target) {
     kill(match, [target]);
-    if (match.seats[target].role === "jester") match.outcome = "solo";
+    if (roleOf(match, target) === "jester") {
+      match.outcome = "solo";
+      match.winner = target;
+    }
+  }
+  if (target && masksHunter(match) && !match.outcome) {
+    announceDeaths(match, "Verdict");
+    return "dayShot";
   }
   if (match.hunter) return "dayShot";
   finishDeaths(match, "Verdict");
@@ -336,14 +444,26 @@ export function nextNight(match: Match) {
     match.outcome ??= "draw";
     return "ended";
   }
+  const living = alive(match);
+  if (convertWildChild(match, living)) {
+    setOutcome(match, living);
+    if (match.outcome) return "ended";
+  }
   match.cycle += 1;
   match.night = {};
+  match.wolfPowers = undefined;
+  if (match.marks)
+    match.marks = match.marks.filter((id) => match.seats[id]?.alive);
   match.votes = {};
   match.runoff = [];
   match.attack = skip;
   match.heal = false;
   match.poison = skip;
-  // The pack always acts first and is alive while the match runs.
   match.turn = nightOrder(match)[0];
+  if (match.turn === "witch") return "potions";
+  if (!match.turn) {
+    announceDeaths(match, "À l’aube");
+    return "dawn";
+  }
   return "night";
 }

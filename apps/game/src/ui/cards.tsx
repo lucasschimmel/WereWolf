@@ -1,4 +1,4 @@
-import { Eye } from "lucide-react";
+import { Eye, Flame, Ghost, Heart, Moon, PawPrint, Trees } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   type Camp,
@@ -7,12 +7,18 @@ import {
   type Role,
   type Settings,
 } from "../../shared/rules";
+import arsonistArt from "../assets/cards/arsonist.webp";
+import blackWolfArt from "../assets/cards/black-wolf.webp";
+import cupidArt from "../assets/cards/cupid.webp";
 import guardArt from "../assets/cards/guard.webp";
 import hunterArt from "../assets/cards/hunter.webp";
 import jesterArt from "../assets/cards/jester.webp";
 import littleGirlArt from "../assets/cards/little-girl.webp";
+import necromancerArt from "../assets/cards/necromancer.webp";
 import seerArt from "../assets/cards/seer.webp";
 import villagerArt from "../assets/cards/villager.webp";
+import whiteWolfArt from "../assets/cards/white-wolf.webp";
+import wildChildArt from "../assets/cards/wild-child.webp";
 import witchArt from "../assets/cards/witch.webp";
 import wolfArt from "../assets/cards/wolf.webp";
 
@@ -26,6 +32,12 @@ const faces: Record<string, string> = {
   hunter: hunterArt,
   witch: witchArt,
   jester: jesterArt,
+  necromancer: necromancerArt,
+  arsonist: arsonistArt,
+  wildChild: wildChildArt,
+  cupid: cupidArt,
+  whiteWolf: whiteWolfArt,
+  blackWolf: blackWolfArt,
 };
 
 /** Visual theme of each card: frame, panels and the accent used for text. */
@@ -113,6 +125,8 @@ const timing: Record<string, string> = {
   witch: "Une fois chacune",
   hunter: "À sa mort",
   jester: "Le jour",
+  wildChild: "À la distribution",
+  cupid: "Première nuit",
 };
 
 const flavors: Record<string, string> = {
@@ -134,16 +148,34 @@ const numbers: Record<string, string> = {
   hunter: "06",
   jester: "07",
   littleGirl: "08",
+  necromancer: "09",
+  arsonist: "10",
+  wildChild: "11",
+  cupid: "12",
+  whiteWolf: "13",
+  blackWolf: "14",
 };
 
 export const themeOf = (role: Role) =>
   role.startsWith("custom:") ? "custom" : role;
-export const accentOf = (role: Role) => themes[themeOf(role)].accent;
+const themeFor = (role: Role) => themes[themeOf(role)] ?? themes.custom;
+export const accentOf = (role: Role) => themeFor(role).accent;
+const roleIcons = {
+  littleGirl: Eye,
+  necromancer: Ghost,
+  arsonist: Flame,
+  wildChild: Trees,
+  cupid: Heart,
+  whiteWolf: Moon,
+  blackWolf: PawPrint,
+};
 
 /** Flat illustration of a role, drawn for the card's art window. */
 export function RoleArt({ kind: role }: { kind: Role }) {
-  if (role === "littleGirl")
-    return <Eye size="42%" color={accentOf(role)} aria-hidden="true" />;
+  if (role in roleIcons) {
+    const Icon = roleIcons[role as keyof typeof roleIcons];
+    return <Icon size="42%" color={accentOf(role)} aria-hidden="true" />;
+  }
   const art = arts[themeOf(role)] ?? arts.custom;
   return (
     <svg
@@ -293,7 +325,7 @@ export function RoleCard({
   className?: string;
 }) {
   const card = cardFor(role, settings);
-  const theme = themes[themeOf(role)];
+  const theme = themeFor(role);
   const style = {
     "--frame": theme.frame,
     "--inner": theme.inner,

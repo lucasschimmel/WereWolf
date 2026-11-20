@@ -25,7 +25,9 @@ Sans commande, démarre une session interactive.
   pass Bot-01                Passe ou annule son action actuelle
   heal Bot-01 [off]          Utilise ou annule le remède
   poison Bot-01 Pseudo|off   Choisit ou annule le poison
-  auto                       Joue une action aléatoire par bot en attente
+  done Bot-01                Valide le tour de la Sorcière
+  ignite Bot-01              Embrase les cibles du Pyromane
+  auto                       Joue le tour des faux joueurs en attente
   next                       Avance une étape serveur (Convex CLI)
   journal                    Affiche votes, éliminations et bilan
   help                       Affiche les commandes
@@ -84,6 +86,9 @@ function showStatus(views: RoomView[], detailed: boolean) {
         console.log(`    Choix : ${nameOf(view, state.selected)}`);
     }
     if (state?.potions) {
+      console.log(
+        state.potions.done ? "    Tour validé" : "    Tour à valider avec done",
+      );
       if (state.potions.attack)
         console.log(
           `    Remède : ${nameOf(view, state.potions.attack)}${state.potions.heal ? " (sélectionné)" : ""}`,
@@ -133,6 +138,8 @@ async function run(room: DevRoom, [input, actor = "", ...rest]: string[]) {
     case "pass":
     case "heal":
     case "poison":
+    case "done":
+    case "ignite":
       await room.act(actor, command, rest.join(" "));
       return;
     case "auto":

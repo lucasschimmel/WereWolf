@@ -9,12 +9,15 @@
  */
 
 import type * as access from "../access.js";
+import type * as bots from "../bots.js";
 import type * as chat from "../chat.js";
+import type * as choices from "../choices.js";
 import type * as crons from "../crons.js";
 import type * as engine from "../engine.js";
 import type * as game from "../game.js";
 import type * as phases from "../phases.js";
 import type * as rooms from "../rooms.js";
+import type * as special from "../special.js";
 import type * as validators from "../validators.js";
 
 import type {
@@ -25,12 +28,15 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   access: typeof access;
+  bots: typeof bots;
   chat: typeof chat;
+  choices: typeof choices;
   crons: typeof crons;
   engine: typeof engine;
   game: typeof game;
   phases: typeof phases;
   rooms: typeof rooms;
+  special: typeof special;
   validators: typeof validators;
 }>;
 

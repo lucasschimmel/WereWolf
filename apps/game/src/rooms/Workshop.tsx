@@ -2,25 +2,18 @@ import { useState } from "react";
 import {
   type CustomCard,
   cardFor,
-  deckFor,
   defaultCustom,
-  type Role,
   type Settings,
 } from "../../shared/rules";
 
 export function Workshop({
   settings,
-  count,
   save,
 }: {
   settings: Settings;
-  count: number;
   save: (settings: Settings) => void;
 }) {
   const [draft, setDraft] = useState(settings);
-  const roles = [
-    ...new Set(deckFor(Math.max(count, 8), { ...settings, mode: "classic" })),
-  ].filter((role) => role !== "wolf");
   const change = (index: number, patch: Partial<CustomCard>) =>
     setDraft({
       ...draft,
@@ -41,26 +34,10 @@ export function Workshop({
       {draft.custom.map((card, index) => (
         <fieldset key={draft.replaced[index] + String(index)}>
           <legend>Carte {index + 1}</legend>
-          <label>
-            Remplace
-            <select
-              value={draft.replaced[index]}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  replaced: draft.replaced.map((role, i) =>
-                    i === index ? (e.target.value as Role) : role,
-                  ),
-                })
-              }
-            >
-              {roles.map((role) => (
-                <option key={role} value={role}>
-                  {cardFor(role, draft).name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p>
+            Place utilisée ·{" "}
+            {cardFor(draft.replaced[index] ?? "villager", draft).name}
+          </p>
           <label>
             Nom
             <input

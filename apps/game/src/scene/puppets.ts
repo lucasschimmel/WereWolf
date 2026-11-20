@@ -1,7 +1,8 @@
 import * as T from "three";
 import { characters } from "../../shared/rules";
-import { Builder, type Materials, rng } from "./kit";
+import { Builder, type Materials, pole, rng, type Vec3 } from "./kit";
 import { dampAngle, type Pose, wrap } from "./layout";
+import { outfits } from "./outfits";
 
 const skins = [
   "#e9b590",
@@ -59,6 +60,8 @@ function head(
   b.box("#7a3d38", [0.08, 0.018, 0.012], [0, 0.135, -0.25]);
   if (index !== 0 && index !== 2)
     b.ball(hair, [0.275, 0.25, 0.275], [0, 0.33, 0.05], undefined, 1);
+  const custom = outfits[characters[index].id];
+  if (custom) return custom.head(b, { outfit, trim, hair });
   switch (index) {
     case 0:
       b.ball(outfit, [0.31, 0.31, 0.3], [0, 0.29, 0.06], undefined, 1);
@@ -131,6 +134,8 @@ function build(index: number): Parts {
     torso.box(outfit, [0.52, 0.72, 0.05], [0, 0.28, 0.25], [-0.12, 0, 0]);
   if (index === 6) torso.box("#6b4a36", [0.38, 0.55, 0.03], [0, 0.22, -0.27]);
   if (index === 2) torso.box("#7a5838", [0.16, 0.2, 0.1], [0.27, 0.12, 0.05]);
+  const custom = outfits[characters[index].id];
+  custom?.torso?.(torso, { outfit, trim, hair });
 
   const headBuilder = new Builder(random, 0.02);
   head(headBuilder, index, skin, hair, outfit, trim);
@@ -148,14 +153,22 @@ function build(index: number): Parts {
       b.box("#3b2f2c", [0.17, 0.04, 0.17], [0, -0.9, 0]);
     }
     if (side > 0 && index === 5) {
+      // A hand bell: the handle sits in the fist, the bell hangs below it.
       b.cylinder(
         "#6b4c34",
-        [0.025, 0.025, 1.7],
-        [0, -0.35, -0.02],
+        [0.022, 0.022, 0.2],
+        [0, -0.52, -0.02],
         undefined,
         5,
       );
-      b.cone("#b8bcc4", 0.06, 0.2, [0, 0.6, -0.02], undefined, 4);
+      b.cylinder(
+        "#b8863b",
+        [0.05, 0.12, 0.15],
+        [0, -0.68, -0.02],
+        undefined,
+        9,
+      );
+      b.ball("#8a6428", 0.035, [0, -0.77, -0.02]);
     }
     if (side > 0 && index === 6) {
       b.cylinder(
@@ -168,30 +181,18 @@ function build(index: number): Parts {
       b.box("#4a4a50", [0.12, 0.12, 0.2], [0, -0.55, -0.35]);
     }
     if (side < 0 && index === 4) {
-      b.cylinder(
-        "#8a6a44",
-        [0.022, 0.022, 1.5],
-        [0, -0.32, -0.04],
-        undefined,
-        5,
-      );
-      b.cylinder(
-        "#8a6a44",
-        [0.022, 0.022, 0.22],
-        [0, 0.45, -0.12],
-        [0.9, 0, 0],
-        5,
-      );
+      // The crook rests on the ground and leans out, clear of the wide brim.
+      const top: Vec3 = [side * 0.22, 0.85, -0.31];
+      pole(b, "#8a6a44", 0.022, [side * -0.074, -1.24, 0.077], top);
+      const bend: Vec3 = [side * 0.3, 0.95, -0.4];
+      pole(b, "#8a6a44", 0.022, top, bend);
+      pole(b, "#8a6a44", 0.022, bend, [side * 0.34, 0.86, -0.48]);
     }
     if (side < 0 && index === 3) {
-      b.cylinder(
-        "#6b4c34",
-        [0.018, 0.018, 1.3],
-        [0, -0.3, -0.15],
-        [0.35, 0, 0],
-        4,
-      );
+      // The rod runs through the fist and points up and away from the body.
+      pole(b, "#6b4c34", 0.018, [0, -0.62, 0.03], [side * 0.15, 0.5, -0.75], 4);
     }
+    custom?.hand?.(b, side);
     return b.build();
   };
   const leg = new Builder(random, 0.03)
@@ -298,6 +299,7 @@ function drawLabel(label: Label) {
 
 export class PuppetFactory {
   private cache = new Map<number, Parts>();
+  private silhouettes = new Map<number, T.BufferGeometry>();
   readonly hitGeometry = new T.CylinderGeometry(0.5, 0.5, 2, 8).translate(
     0,
     1,
@@ -335,9 +337,31 @@ export class PuppetFactory {
     }
     return parts;
   }
+
+  silhouette(index: number) {
+    const safe =
+      ((index % characters.length) + characters.length) % characters.length;
+    let geometry = this.silhouettes.get(safe);
+    if (!geometry) {
+      const { color, trim } = characters[safe];
+      geometry = new Builder(rng(100 + safe), 0)
+        .cylinder(color, [0.23, 0.31, 0.65], [0, 1, 0], undefined, 6)
+        .ball(skins[safe % skins.length], 0.23, [0, 1.57, 0])
+        .ball(hairs[safe % hairs.length], [0.24, 0.16, 0.24], [0, 1.72, 0])
+        .box(trim, [0.44, 0.08, 0.37], [0, 1.24, 0])
+        .box(color, [0.67, 0.45, 0.19], [0, 0.99, 0])
+        .box(pants, [0.36, 0.59, 0.22], [0, 0.38, 0])
+        .box(boots, [0.39, 0.13, 0.31], [0, 0.1, -0.04])
+        .build();
+      this.silhouettes.set(safe, geometry);
+    }
+    return geometry;
+  }
+
   dispose() {
     for (const parts of this.cache.values())
       for (const geometry of Object.values(parts)) geometry.dispose();
+    for (const geometry of this.silhouettes.values()) geometry.dispose();
     this.hitGeometry.dispose();
     this.hitMaterial.dispose();
     this.ghostMaterial.dispose();
@@ -350,7 +374,9 @@ export type Gesture = "none" | "wave" | "point" | "cheer" | "mourn" | "sleep";
 
 export class Puppet {
   readonly root = new T.Group();
+  readonly hit: T.Mesh;
   private body = new T.Group();
+  private silhouette?: T.Mesh;
   private torso = new T.Group();
   private head = new T.Group();
   private armLeft = new T.Group();
@@ -377,7 +403,7 @@ export class Puppet {
   constructor(
     readonly id: string,
     readonly character: number,
-    factory: PuppetFactory,
+    private factory: PuppetFactory,
     private castShadow: boolean,
   ) {
     const parts = factory.parts(character);
@@ -406,15 +432,38 @@ export class Puppet {
     this.armRight.position.set(0.3, 0.56, 0);
     add(this.armLeft, parts.armLeft);
     add(this.armRight, parts.armRight);
-    const hit = new T.Mesh(factory.hitGeometry, factory.hitMaterial);
-    hit.userData.player = id;
-    this.root.add(hit);
+    this.hit = new T.Mesh(factory.hitGeometry, factory.hitMaterial);
+    this.hit.userData.player = id;
+    this.root.add(this.hit);
     this.shadow = new T.Mesh(factory.shadowGeometry, factory.shadowMaterial);
     this.shadow.position.y = 0.13;
     this.shadow.renderOrder = 1;
     this.shadow.visible = !castShadow;
     this.root.add(this.shadow);
     this.root.userData.player = id;
+  }
+
+  setDetail(camera: T.Vector3, distance: number, shadows: boolean) {
+    if (!this.root.visible) return;
+    const cutoff = this.body.visible ? distance : distance * 0.9;
+    const distant =
+      !this.falling &&
+      this.waveTimer <= 0 &&
+      (this.gesture === "none" || this.gesture === "sleep") &&
+      camera.distanceToSquared(this.position) > cutoff * cutoff;
+    this.body.visible = !distant;
+    this.shadow.visible = !this.ghost && !this.falling && (!shadows || distant);
+    if (distant && !this.silhouette) {
+      this.silhouette = new T.Mesh(
+        this.factory.silhouette(this.character),
+        this.solid,
+      );
+      this.root.add(this.silhouette);
+    }
+    if (this.silhouette) {
+      this.silhouette.visible = distant;
+      this.silhouette.material = this.ghost ? this.ghostMaterial : this.solid;
+    }
   }
 
   setLabel(label: Label | null) {

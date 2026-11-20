@@ -1,21 +1,151 @@
+import {
+  type CardCopies,
+  type ConfigurableRole,
+  type MatchOptions,
+  minVillagers,
+  packSize,
+  percent,
+  type Timer,
+} from "./match-options.ts";
+
 export const modes = {
   classic: "Classique",
   express: "Express",
   mystery: "Mystère",
   chaos: "Chaos",
   workshop: "Atelier",
+  custom: "Personnalisé",
 } as const;
 export type Mode = keyof typeof modes;
+/**
+ * The professions players pick in the lobby, one per seat. A profession is a
+ * look, a home sign and (later) a night pastime: it never relates to the role
+ * card, and no profession name may collide with a card name.
+ */
 export const characters = [
-  { name: "La Forestière", color: "#668859", trim: "#c4a86d" },
-  { name: "Le Lanternier", color: "#b48349", trim: "#483344" },
-  { name: "La Guérisseuse", color: "#925e84", trim: "#d3aa91" },
-  { name: "Le Pêcheur", color: "#4b8492", trim: "#cbc09d" },
-  { name: "La Bergère", color: "#ad5c54", trim: "#d9ccb2" },
-  { name: "Le Veilleur", color: "#6575a4", trim: "#d2a458" },
-  { name: "La Forgeronne", color: "#594b46", trim: "#c98059" },
-  { name: "Le Meunier", color: "#a09560", trim: "#544332" },
+  {
+    id: "forester",
+    name: "La Forestière",
+    craft: "Bûches et cueillette",
+    color: "#3f6b45",
+    trim: "#c4a86d",
+  },
+  {
+    id: "lanterner",
+    name: "Le Lanternier",
+    craft: "Lanternes de toutes les couleurs",
+    color: "#9c7a3c",
+    trim: "#4a3344",
+  },
+  {
+    id: "herbalist",
+    name: "L’Herboriste",
+    craft: "Simples séchés et décoctions",
+    color: "#7fa36a",
+    trim: "#3d2f4a",
+  },
+  {
+    id: "fisher",
+    name: "Le Pêcheur",
+    craft: "Filets, nasses et barque",
+    color: "#3f8a8f",
+    trim: "#cbc09d",
+  },
+  {
+    id: "shepherd",
+    name: "La Bergère",
+    craft: "Moutons et laine filée",
+    color: "#b0524a",
+    trim: "#e2d4b8",
+  },
+  {
+    id: "ringer",
+    name: "Le Sonneur",
+    craft: "Cloches et carillons",
+    color: "#5a6fa8",
+    trim: "#d2a458",
+  },
+  {
+    id: "smith",
+    name: "La Forgeronne",
+    craft: "Fer battu sur l’enclume",
+    color: "#4d4440",
+    trim: "#d9783a",
+  },
+  {
+    id: "miller",
+    name: "Le Meunier",
+    craft: "Farine du moulin",
+    color: "#d8cfa0",
+    trim: "#6b5536",
+  },
+  {
+    id: "baker",
+    name: "Le Boulanger",
+    craft: "Miches et brioches au four",
+    color: "#c97b35",
+    trim: "#f0dcb0",
+  },
+  {
+    id: "carpenter",
+    name: "Le Menuisier",
+    craft: "Planches et figurines sculptées",
+    color: "#7a5232",
+    trim: "#d9b98a",
+  },
+  {
+    id: "seamstress",
+    name: "La Couturière",
+    craft: "Broderies et linge coloré",
+    color: "#8e4f86",
+    trim: "#e6c3a0",
+  },
+  {
+    id: "potter",
+    name: "La Potière",
+    craft: "Jarres montées au tour",
+    color: "#8f8a80",
+    trim: "#b8705a",
+  },
+  {
+    id: "beekeeper",
+    name: "L’Apicultrice",
+    craft: "Ruches de paille et miel",
+    color: "#e3a52b",
+    trim: "#3a2a1c",
+  },
+  {
+    id: "scribe",
+    name: "Le Copiste",
+    craft: "Plumes, encres et enluminures",
+    color: "#3d3f7a",
+    trim: "#e8dcc0",
+  },
+  {
+    id: "cheesemaker",
+    name: "Le Fromager",
+    craft: "Meules affinées",
+    color: "#9fb8c8",
+    trim: "#5a4632",
+  },
 ] as const;
+export type Profession = (typeof characters)[number]["id"];
+
+/**
+ * The first profession nobody at the table wears yet, starting from the
+ * preferred one. There are as many professions as seats, so one is always free.
+ */
+export function freeCharacter(taken: Iterable<number>, preferred = 0) {
+  const used = new Set(taken);
+  const start = Number.isInteger(preferred) ? preferred : 0;
+  for (let step = 0; step < characters.length; step++) {
+    const index =
+      (((start + step) % characters.length) + characters.length) %
+      characters.length;
+    if (!used.has(index)) return index;
+  }
+  return 0;
+}
 export type Camp = "village" | "pack" | "solo";
 export const campNames: Record<Camp, string> = {
   village: "Village",
@@ -63,8 +193,54 @@ export const cards = {
     camp: "solo",
     text: "Remporte la partie si le verdict d’un vote de jour t’élimine.",
   },
+  necromancer: {
+    name: "Nécromancien",
+    camp: "village",
+    text: "Vois les fantômes des morts. Chaque nuit, échange avec eux dans le chat des esprits.",
+  },
+  arsonist: {
+    name: "Pyromane",
+    camp: "solo",
+    text: "Asperge jusqu’à deux autres vivants d’essence. Une nuit suivante, embrase tes cibles une seule fois. Gagne si tu survis seul.",
+  },
+  wildChild: {
+    name: "Enfant Sauvage",
+    camp: "village",
+    text: "Choisis un modèle à la distribution. S’il meurt, rejoins la Meute au début de la nuit suivante.",
+  },
+  cupid: {
+    name: "Cupidon",
+    camp: "village",
+    text: "La première nuit, lie deux autres vivants. Ils se reconnaissent en privé et gardent leurs conditions de victoire. Si l’un meurt, l’autre meurt aussi.",
+  },
+  whiteWolf: {
+    name: "Loup Blanc",
+    camp: "solo",
+    text: "Chasse avec la Meute. Une fois, tu peux éliminer un autre loup pendant la nuit. Gagne si tu survis seul.",
+  },
+  blackWolf: {
+    name: "Loup Noir",
+    camp: "pack",
+    text: "Chasse avec la Meute. Une fois, tu peux infecter sa cible. Elle survit et devient loup si la Sorcière n’annule pas l’attaque.",
+  },
 } as const;
 export type Role = keyof typeof cards | "custom:0" | "custom:1";
+export const optionalRoles = [
+  "seer",
+  "guard",
+  "witch",
+  "hunter",
+  "littleGirl",
+  "jester",
+  "necromancer",
+  "arsonist",
+  "wildChild",
+  "cupid",
+  "whiteWolf",
+  "blackWolf",
+] as const;
+export type OptionalRole = (typeof optionalRoles)[number];
+export const configurableRoles = ["wolf", ...optionalRoles] as const;
 export type CustomCard = {
   name: string;
   flavor: string;
@@ -78,6 +254,9 @@ export type Settings = {
   reveal: boolean;
   custom: CustomCard[];
   replaced: Role[];
+  roleOverrides?: Partial<Record<OptionalRole, boolean>>;
+  copies?: CardCopies;
+  options?: MatchOptions;
 };
 export const defaultSettings: Settings = {
   mode: "classic",
@@ -98,6 +277,47 @@ export const maxPlayers = 15;
 export const maxCycles = 7;
 export function minForMode(mode: Mode) {
   return mode === "chaos" ? 12 : mode === "mystery" ? 10 : minPlayers;
+}
+
+export function roleAvailable(role: OptionalRole, count: number, mode: Mode) {
+  if (role === "seer" || role === "guard") return true;
+  if (role === "hunter") return count >= 9;
+  if (role === "witch") return count >= 10;
+  if (role === "littleGirl") return count === 10 || count === 11;
+  if (role === "necromancer") return count >= 12 && mode !== "express";
+  if (role === "cupid") return count >= 10 && mode !== "express";
+  if (role === "wildChild") return count >= 12 && mode !== "express";
+  return (
+    count >= 12 &&
+    (mode === "chaos" || mode === "workshop" || mode === "custom")
+  );
+}
+
+export function roleChance(
+  role: OptionalRole,
+  count: number,
+  settings: Settings,
+) {
+  if (!roleAvailable(role, count, settings.mode)) return percent.min;
+  if (settings.mode === "custom" && settings.copies)
+    return settings.copies[role] ? percent.max : percent.min;
+  const chance =
+    settings.mode === "custom" ? settings.options?.chances?.[role] : undefined;
+  if (chance !== undefined) return chance;
+  const presets =
+    role === "seer" ||
+    role === "hunter" ||
+    (role === "guard" && count < 10) ||
+    (role === "witch" && count >= 10) ||
+    role === "littleGirl" ||
+    (settings.mode === "mystery" && role === "necromancer") ||
+    (settings.mode === "chaos" &&
+      (role === "jester" ||
+        role === "cupid" ||
+        (role === "arsonist" && count >= 13)));
+  return (settings.roleOverrides?.[role] ?? presets)
+    ? percent.max
+    : percent.min;
 }
 export function cardFor(role: Role, settings: Settings) {
   if (!role.startsWith("custom:")) return cards[role as keyof typeof cards];
@@ -126,19 +346,127 @@ export function cardFor(role: Role, settings: Settings) {
     text: `${times[card.uses]}, sélectionne ${targets[card.target]} et ${effects[card.effect]}.${repeat}`,
   };
 }
-export function deckFor(count: number, settings: Settings): Role[] {
+function wolfCount(count: number, settings: Settings) {
+  const custom =
+    settings.mode === "custom" ? settings.options?.wolves : undefined;
+  return custom ?? (count < 10 ? 2 : count < 14 ? 3 : 4);
+}
+
+export function customCardCopies(
+  count: number,
+  settings: Settings,
+): CardCopies {
+  if (settings.copies) return settings.copies;
+  const copies: CardCopies = {};
+  for (const role of optionalRoles) {
+    if (roleChance(role, count, settings) === percent.max) copies[role] = 1;
+  }
+  copies.wolf =
+    wolfCount(count, settings) - (copies.blackWolf || copies.whiteWolf || 0);
+  return copies;
+}
+
+export function customSettings(reveal: boolean, copies?: CardCopies): Settings {
+  return {
+    ...defaultSettings,
+    mode: "custom",
+    reveal,
+    ...(copies ? { copies } : {}),
+  };
+}
+
+export function maxCardCopies(role: ConfigurableRole, count: number) {
+  switch (role) {
+    case "wolf":
+      return Math.min(packSize.max, Math.floor((count - 1) / 2));
+    case "seer":
+    case "guard":
+    case "littleGirl":
+    case "jester":
+      return count - minVillagers - packSize.min;
+    default:
+      return 1;
+  }
+}
+
+function customDeck(count: number, copies: CardCopies): Role[] {
+  const deck: Role[] = [];
+  for (const role of configurableRoles) {
+    const amount = copies[role] ?? 0;
+    if (
+      !Number.isInteger(amount) ||
+      amount < 0 ||
+      amount > maxCardCopies(role, count)
+    )
+      throw new Error(
+        `Quantité invalide pour la carte « ${cards[role].name} ».`,
+      );
+    if (amount && role !== "wolf" && !roleAvailable(role, count, "custom"))
+      throw new Error(
+        `La carte « ${cards[role].name} » est indisponible à ${count} joueurs.`,
+      );
+    for (let index = 0; index < amount; index++) deck.push(role);
+  }
+  const variants = (copies.blackWolf ?? 0) + (copies.whiteWolf ?? 0);
+  if (variants + (copies.wildChild ?? 0) > 1)
+    throw new Error(
+      "Choisis une seule variante parmi l’Enfant Sauvage, le Loup Blanc et le Loup Noir.",
+    );
+  const wolves = (copies.wolf ?? 0) + variants;
+  if (wolves < packSize.min)
+    throw new Error(
+      "Ajoute au moins une carte de Loup-garou, Loup Noir ou Loup Blanc.",
+    );
+  if (wolves > packSize.max || wolves * 2 >= count)
+    throw new Error(
+      "La Meute doit être minoritaire et compter au plus quatre cartes.",
+    );
+  if (count - deck.length < minVillagers)
+    throw new Error("Garde au moins deux places pour les Villageois.");
+  return deck.concat(Array<Role>(count - deck.length).fill("villager"));
+}
+
+/** includeChance supports night slots in matches started with legacy probabilities. */
+export function deckFor(
+  count: number,
+  settings: Settings,
+  includeChance?: (chance: number) => boolean,
+): Role[] {
   if (
     !Number.isInteger(count) ||
     count < minForMode(settings.mode) ||
     count > maxPlayers
   )
     throw new Error("Effectif incompatible avec ce mode.");
-  const wolves = count < 10 ? 2 : count < 14 ? 3 : 4;
+  if (settings.mode === "custom" && (!includeChance || settings.copies))
+    return customDeck(count, customCardCopies(count, settings));
+  const wolves = wolfCount(count, settings);
+  if (wolves * 2 >= count)
+    throw new Error("La Meute doit être minoritaire au lancement.");
   const deck: Role[] = Array.from({ length: wolves }, () => "wolf");
-  deck.push("seer", count < 10 ? "guard" : "witch");
-  if (count >= 9) deck.push("hunter");
-  if (count === 10 || count === 11) deck.push("littleGirl");
-  if (settings.mode === "chaos") deck.push("jester");
+  const enabled = optionalRoles.filter((role) => {
+    const chance = roleChance(role, count, settings);
+    return (
+      chance === percent.max ||
+      (chance > percent.min && includeChance?.(chance))
+    );
+  });
+  const wolfVariants = enabled.filter(
+    (role) => role === "whiteWolf" || role === "blackWolf",
+  );
+  if (
+    wolfVariants.length > 1 ||
+    (wolfVariants.length && enabled.includes("wildChild"))
+  )
+    throw new Error(
+      "Active une seule variante de Meute parmi l’Enfant Sauvage, le Loup Blanc et le Loup Noir.",
+    );
+  if (wolfVariants[0]) deck[0] = wolfVariants[0];
+  deck.push(
+    ...enabled.filter((role) => role !== "whiteWolf" && role !== "blackWolf"),
+  );
+  if (count - deck.length < 2)
+    throw new Error("Garde au moins deux places pour les Villageois.");
   while (deck.length < count) deck.push("villager");
   if (settings.mode !== "workshop") return deck;
   if (
@@ -159,7 +487,13 @@ export function deckFor(count: number, settings: Settings): Role[] {
     names.add(name);
     const replaced = settings.replaced[index];
     const slot = deck.indexOf(replaced);
-    if (slot < 0 || replaced === "wolf" || replaced.startsWith("custom:"))
+    if (
+      slot < 0 ||
+      replaced.startsWith("custom:") ||
+      replaced === "wolf" ||
+      replaced === "whiteWolf" ||
+      replaced === "blackWolf"
+    )
       throw new Error("Cette carte ne peut pas être remplacée dans ce paquet.");
     if (
       card.avoidRepeat &&
@@ -189,6 +523,7 @@ export function deckFor(count: number, settings: Settings): Role[] {
     throw new Error("Le paquet accepte une seule observation récurrente.");
   return deck;
 }
+
 export type Phase =
   | "intro"
   | "night"
@@ -225,7 +560,8 @@ export const isDayBallot = (phase: Phase) =>
 /** Whether a dead player's role is shown to everyone (same rule as `game.view`). */
 export const revealsOnDeath = (settings: Settings) =>
   settings.mode !== "mystery" &&
-  (settings.mode !== "workshop" || settings.reveal);
+  ((settings.mode !== "workshop" && settings.mode !== "custom") ||
+    settings.reveal);
 
 /**
  * Night turns, in play order. When roles are revealed on death, a turn whose
@@ -239,12 +575,16 @@ export const revealsOnDeath = (settings: Settings) =>
  * announcement.
  */
 export const turnOrder = [
+  "cupid",
   "pack",
   "littleGirl",
   "seer",
   "guard",
+  "whiteWolf",
+  "arsonist",
   "custom:0",
   "custom:1",
+  "blackWolf",
 ] as const;
 export type ActionTurn = (typeof turnOrder)[number];
 export type NightTurn = ActionTurn | "witch";
@@ -259,6 +599,7 @@ export function nightTurns(roles: Iterable<Role>): ActionTurn[] {
   for (const role of roles) {
     const turn = turnOf(role);
     if (turn) present.add(turn);
+    if (role === "whiteWolf" || role === "blackWolf") present.add("pack");
   }
   return turnOrder.filter((turn) => present.has(turn));
 }
@@ -317,6 +658,28 @@ export function secondsFor(phase: Phase, count: number, mode: Mode) {
     dayShot: 15,
     ended: 0,
   }[phase];
+}
+
+const soloDebateSeconds = 45;
+
+export function matchSeconds(
+  timer: Timer,
+  count: number,
+  settings: Settings,
+  solo = false,
+) {
+  const custom =
+    settings.mode === "custom" ? settings.options?.timings?.[timer] : undefined;
+  if (custom !== undefined) return custom;
+  if (timer === "pack") return turnSeconds("pack");
+  const seconds = secondsFor(
+    timer === "shot" ? "dayShot" : timer,
+    count,
+    settings.mode,
+  );
+  return solo && timer === "debate"
+    ? Math.min(seconds, soloDebateSeconds)
+    : seconds;
 }
 export function plurality(votes: Record<string, string>) {
   const totals = new Map<string, number>();

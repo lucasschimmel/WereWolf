@@ -11,6 +11,8 @@ export type SceneMember = {
   name: string;
   character: number;
   alive: boolean;
+  inScene?: boolean;
+  ghost?: boolean;
   host: boolean;
   ready: boolean;
   role?: string;
@@ -28,6 +30,10 @@ export class Cast {
   private dusted = new Set<number>();
   private wanderers: Wanderer[] = [];
   private seed = 1;
+  private roster?: SceneMember[];
+  private phase?: Phase;
+  private viewer?: string;
+  private hits: T.Intersection[] = [];
 
   constructor(
     private scene: T.Scene,
@@ -36,6 +42,10 @@ export class Cast {
     private dust: Particles,
     private shadows: boolean,
   ) {}
+
+  get hasShowcase() {
+    return this.wanderers.length > 0;
+  }
 
   private random() {
     this.seed = (this.seed * 16807) % 2147483647;
@@ -62,18 +72,25 @@ export class Cast {
   /** Creates, replaces and buries puppets to match the room roster. */
   sync(
     members: SceneMember[],
+    me: string,
     phase: Phase | undefined,
     view: View,
     onDeath: () => void,
   ) {
+    if (this.roster === members && this.phase === phase && this.viewer === me)
+      return;
+    this.roster = members;
+    this.phase = phase;
+    this.viewer = me;
     const seen = new Set<string>();
     for (const [index, member] of members.entries()) {
+      if (member.inScene === false) continue;
       seen.add(member.id);
       let puppet = this.puppets.get(member.id);
       if (
         !puppet ||
         puppet.character !== member.character ||
-        (member.alive && puppet.falling)
+        ((member.alive || member.ghost) && puppet.falling)
       ) {
         if (puppet) this.remove(puppet);
         puppet = new Puppet(
@@ -85,11 +102,29 @@ export class Cast {
         this.puppets.set(member.id, puppet);
         this.scene.add(puppet.root);
       }
+      puppet.setLabel(
+        member.id === me
+          ? null
+          : {
+              name: member.name,
+              alive: member.alive,
+              host: member.host,
+              ready: phase ? undefined : member.ready,
+              mate: member.mate,
+              role: member.role,
+              camp: member.camp,
+            },
+      );
       const before = this.alive.get(member.id);
       if (before === undefined) {
         if (!member.alive) this.seats.bury(index, -1);
       } else if (before && !member.alive) {
-        if (phase === "dawn" || view === "interior" || !puppet.root.visible)
+        if (
+          member.ghost ||
+          phase === "dawn" ||
+          view === "interior" ||
+          !puppet.root.visible
+        )
           this.seats.bury(index, 3.4);
         else {
           puppet.fall();
@@ -112,7 +147,15 @@ export class Cast {
         this.alive.delete(id);
         this.ready.delete(id);
       }
-    for (let index = 0; index < members.length; index++)
+  }
+
+  refreshLabels() {
+    for (const puppet of this.puppets.values()) puppet.setLabel(null);
+    this.roster = undefined;
+  }
+
+  updateBurials(count: number) {
+    for (let index = 0; index < count; index++)
       if (!this.dusted.has(index) && this.seats.rising(index)) {
         this.dusted.add(index);
         this.burst(this.seats.tombTop(index));
@@ -151,6 +194,7 @@ export class Cast {
       selected?: string;
       pointing: boolean;
       outcome?: Outcome;
+      winner?: string;
       /** Players shown awake on the square during a night turn (the pack). */
       awake: string[];
       /** Live aims of other awake players, by player id. */
@@ -167,40 +211,34 @@ export class Cast {
     for (const [index, member] of members.entries()) {
       const puppet = this.puppets.get(member.id);
       if (!puppet) continue;
-      puppet.setLabel(
-        member.id === me
-          ? null
-          : {
-              name: member.name,
-              alive: member.alive,
-              host: member.host,
-              ready: phase ? undefined : member.ready,
-              mate: member.mate,
-              role: member.role,
-              camp: member.camp,
-            },
-      );
       const asleep =
         phase === "night" &&
         member.id !== me &&
         !context.awake.includes(member.id);
-      puppet.setGhost(asleep);
+      puppet.setGhost(asleep || !!member.ghost);
       const aim =
         member.id === me
           ? context.pointing
             ? target
             : undefined
           : this.puppets.get(context.aims[member.id] ?? "");
-      puppet.gesture = asleep
-        ? "sleep"
-        : phase === "ended" && winner && member.camp
-          ? member.camp === winner
-            ? "cheer"
-            : "mourn"
-          : aim
-            ? "point"
-            : "none";
-      if (view === "interior" || (!member.alive && !puppet.falling)) {
+      const won = context.winner
+        ? member.id === context.winner
+        : member.camp === winner;
+      puppet.gesture =
+        asleep && !member.ghost
+          ? "sleep"
+          : phase === "ended" && winner && member.camp
+            ? won
+              ? "cheer"
+              : "mourn"
+            : aim
+              ? "point"
+              : "none";
+      if (
+        view === "interior" ||
+        (!member.alive && !member.ghost && !puppet.falling)
+      ) {
         puppet.update(delta, time, null, "snap");
         continue;
       }
@@ -250,15 +288,26 @@ export class Cast {
     puppet.update(delta, time, wanderer.goal, "walk");
   }
 
-  pick(raycaster: T.Raycaster) {
-    const roots = [...this.puppets.values()]
-      .filter((puppet) => puppet.root.visible && !puppet.falling)
-      .map((puppet) => puppet.root);
-    for (const hit of raycaster.intersectObjects(roots, true))
-      for (let node: T.Object3D | null = hit.object; node; node = node.parent)
-        if (typeof node.userData.player === "string")
-          return node.userData.player as string;
-    return undefined;
+  setDetail(camera: T.Vector3, distance: number, shadows: boolean) {
+    for (const puppet of this.puppets.values())
+      puppet.setDetail(camera, distance, shadows);
+    for (const { puppet } of this.wanderers)
+      puppet.setDetail(camera, distance, shadows);
+  }
+
+  pick(raycaster: T.Raycaster, targets: string[]) {
+    let closest = Infinity;
+    let selected: string | undefined;
+    for (const id of targets) {
+      const puppet = this.puppets.get(id);
+      if (!puppet?.root.visible || puppet.falling) continue;
+      this.hits.length = 0;
+      const [hit] = raycaster.intersectObject(puppet.hit, false, this.hits);
+      if (!hit || hit.distance >= closest) continue;
+      closest = hit.distance;
+      selected = id;
+    }
+    return selected;
   }
 
   ownPosition(me: string) {

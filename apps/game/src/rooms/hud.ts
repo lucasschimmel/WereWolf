@@ -1,6 +1,7 @@
 import {
   cardFor,
   type NightTurn,
+  revealsOnDeath,
   type Settings,
   turnName,
 } from "../../shared/rules";
@@ -21,6 +22,11 @@ export const instructions: Record<Action, string> = {
   protect: "Pointe la personne à protéger de la meute",
   activity: "Pointe quelqu’un pour savoir s’il a agi cette nuit",
   poison: "Poison · pointe ta cible · clic droit pour annuler",
+  model: "Choisis secrètement ton modèle",
+  link: "Choisis les deux personnes à lier",
+  douse: "Asperge un vivant ou embrase tes cibles",
+  betray: "Choisis un loup à éliminer",
+  infect: "Choisis la victime de la Meute pour l’infecter",
 };
 
 /** The same instructions for a finger: tap a puppet or use the list. */
@@ -35,6 +41,11 @@ export const touchInstructions: Record<Action, string> = {
   protect: "Choisis la personne à protéger de la meute",
   activity: "Choisis quelqu’un pour savoir s’il a agi cette nuit",
   poison: "Poison · choisis ta cible",
+  model: instructions.model,
+  link: instructions.link,
+  douse: instructions.douse,
+  betray: instructions.betray,
+  infect: instructions.infect,
 };
 
 export const passLabels: Record<Action, string> = {
@@ -48,6 +59,11 @@ export const passLabels: Record<Action, string> = {
   protect: "Passer",
   activity: "Passer",
   poison: "Annuler",
+  model: "Renoncer au modèle",
+  link: "Passer",
+  douse: "Passer",
+  betray: "Passer",
+  infect: "Passer",
 };
 
 const turnTones: Partial<Record<NightTurn, Tone>> = {
@@ -96,15 +112,56 @@ export function statusFor({
   const watching = alive ? undefined : "Tu observes en silence";
   switch (match.phase) {
     case "intro":
-      return { title: "Distribution", detail: "Découvre ta carte, en secret" };
+      return {
+        title: "Distribution",
+        detail:
+          aiming === "model"
+            ? `${said.model}${echo}`
+            : "Découvre ta carte, en secret",
+      };
     case "night": {
       const turn = match.turn;
       const title = `Nuit ${match.cycle}${turn ? ` · ${shortName(turn, room.settings)}` : ""}`;
       const tone = (turn && turnTones[turn]) ?? "night";
+      if (aiming === "link")
+        return {
+          title,
+          tone,
+          detail:
+            match.linkCount === 1 ? "Choisis la deuxième personne" : said.link,
+        };
+      if (aiming === "douse" && match.selected === "ignite")
+        return { title, tone, detail: "Embrasement prévu à la fin de la nuit" };
+      if (aiming === "infect" && !match.targets?.length)
+        return { title, tone, detail: "Aucune victime à infecter cette nuit" };
+      if (aiming && match.selected === "" && aiming !== "poison")
+        return { title, tone, detail: "Tu as passé ton tour." };
       if (aiming) return { title, tone, detail: `${said[aiming]}${echo}` };
+      if (match.potions?.done)
+        return { title, tone, detail: "Ton tour est validé." };
       if (witchTurn) return { title, tone, detail: "C’est ton tour" };
-      if (match.action === "inspect" && match.selected)
-        return { title, tone, detail: `Ta vision est faite · ${choice}` };
+      if (match.action === "link" && match.selected !== undefined)
+        return {
+          title,
+          tone,
+          detail: match.selected
+            ? "Le lien est formé."
+            : "Tu as passé ton tour.",
+        };
+      if (match.ghosts?.length)
+        return {
+          title,
+          tone,
+          detail: "Parle aux morts dans le chat des esprits",
+        };
+      if (match.action === "inspect" && match.selected !== undefined)
+        return {
+          title,
+          tone,
+          detail: choice
+            ? `Ta vision est faite · ${choice}`
+            : "Tu as passé ton tour.",
+        };
       if (match.action === "peek" && match.selected !== undefined)
         return {
           title,
@@ -154,6 +211,16 @@ export function statusFor({
       };
     case "dawnShot":
     case "dayShot":
+      if (match.shotDone)
+        return {
+          title: "Le Chasseur riposte",
+          tone: "hunter" as Tone,
+          detail: choice
+            ? `Ta cible est confirmée · ${choice}`
+            : "Tu as passé ton tour.",
+        };
+      if (!aiming && !revealsOnDeath(room.settings))
+        return { title: "Résolution", detail: "Le village attend…" };
       return {
         title: "Le Chasseur riposte",
         tone: "hunter" as Tone,

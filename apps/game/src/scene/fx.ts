@@ -1,6 +1,6 @@
 import * as T from "three";
-import type { GlowSpot } from "./hamlet";
 import { rng, softDot } from "./kit";
+import type { GlowSpot } from "./maps/types";
 
 const haloVertex = `
 attribute float size;
@@ -38,7 +38,7 @@ export function haloMaterial(intensity = 1) {
   });
 }
 
-export function haloField(spots: GlowSpot[], material: T.ShaderMaterial) {
+function haloGeometry(spots: GlowSpot[]) {
   const geometry = new T.BufferGeometry();
   const positions = new Float32Array(spots.length * 3);
   const tints = new Float32Array(spots.length * 3);
@@ -52,9 +52,19 @@ export function haloField(spots: GlowSpot[], material: T.ShaderMaterial) {
   geometry.setAttribute("position", new T.BufferAttribute(positions, 3));
   geometry.setAttribute("tint", new T.BufferAttribute(tints, 3));
   geometry.setAttribute("size", new T.BufferAttribute(sizes, 1));
-  const points = new T.Points(geometry, material);
+  return geometry;
+}
+
+export function haloField(spots: GlowSpot[], material: T.ShaderMaterial) {
+  const points = new T.Points(haloGeometry(spots), material);
   points.frustumCulled = false;
   return points;
+}
+
+/** Replaces the lights once the homes are laid out for another head count. */
+export function setHalos(points: T.Points, spots: GlowSpot[]) {
+  points.geometry.dispose();
+  points.geometry = haloGeometry(spots);
 }
 
 const moteVertex = `
@@ -87,9 +97,11 @@ void main() {
 /** Drifting fireflies at night, pollen by day. */
 export class Motes {
   readonly points: T.Points<T.BufferGeometry, T.ShaderMaterial>;
-  private night = new T.Color("#d9ff7a");
-  private day = new T.Color("#fff3c4");
-  constructor(count: number) {
+  private night: T.Color;
+  private day: T.Color;
+  constructor(count: number, colors: { day: string; night: string }) {
+    this.night = new T.Color(colors.night);
+    this.day = new T.Color(colors.day);
     const random = rng(91);
     const positions = new Float32Array(count * 3);
     const seeds = new Float32Array(count * 3);
@@ -168,6 +180,8 @@ export class Particles {
   private span: Float32Array;
   private base: Float32Array;
   private cursor = 0;
+  private active = 0;
+  private occupied = 0;
   constructor(
     private capacity: number,
     color: string,
@@ -178,15 +192,21 @@ export class Particles {
     const geometry = new T.BufferGeometry();
     geometry.setAttribute(
       "position",
-      new T.BufferAttribute(new Float32Array(capacity * 3), 3),
+      new T.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
+        T.DynamicDrawUsage,
+      ),
     );
     geometry.setAttribute(
       "alpha",
-      new T.BufferAttribute(new Float32Array(capacity), 1),
+      new T.BufferAttribute(new Float32Array(capacity), 1).setUsage(
+        T.DynamicDrawUsage,
+      ),
     );
     geometry.setAttribute(
       "size",
-      new T.BufferAttribute(new Float32Array(capacity), 1),
+      new T.BufferAttribute(new Float32Array(capacity), 1).setUsage(
+        T.DynamicDrawUsage,
+      ),
     );
     this.velocity = new Float32Array(capacity * 3);
     this.life = new Float32Array(capacity);
@@ -207,32 +227,39 @@ export class Particles {
       }),
     );
     this.points.frustumCulled = false;
+    geometry.setDrawRange(0, 0);
   }
   get color() {
     return this.points.material.uniforms.uColor.value as T.Color;
   }
   emit(position: T.Vector3, velocity: T.Vector3, life: number, size: number) {
     const index = this.cursor;
+    if (this.life[index] <= 0) this.active++;
+    this.occupied = Math.max(this.occupied, index + 1);
     this.cursor = (this.cursor + 1) % this.capacity;
     const positions = this.points.geometry.attributes
       .position as T.BufferAttribute;
     positions.setXYZ(index, position.x, position.y, position.z);
-    this.velocity.set([velocity.x, velocity.y, velocity.z], index * 3);
+    this.velocity[index * 3] = velocity.x;
+    this.velocity[index * 3 + 1] = velocity.y;
+    this.velocity[index * 3 + 2] = velocity.z;
     this.life[index] = life;
     this.span[index] = life;
     this.base[index] = size;
   }
   update(delta: number) {
+    if (!this.active) return;
     const positions = this.points.geometry.attributes
       .position as T.BufferAttribute;
     const alpha = this.points.geometry.attributes.alpha as T.BufferAttribute;
     const size = this.points.geometry.attributes.size as T.BufferAttribute;
-    for (let index = 0; index < this.capacity; index++) {
+    for (let index = 0; index < this.occupied; index++) {
       if (this.life[index] <= 0) {
         alpha.setX(index, 0);
         continue;
       }
       this.life[index] -= delta;
+      if (this.life[index] <= 0) this.active--;
       const age = 1 - Math.max(this.life[index], 0) / this.span[index];
       this.velocity[index * 3 + 1] += this.gravity * delta;
       positions.setXYZ(
@@ -250,6 +277,8 @@ export class Particles {
     positions.needsUpdate = true;
     alpha.needsUpdate = true;
     size.needsUpdate = true;
+    this.points.geometry.setDrawRange(0, this.active ? this.occupied : 0);
+    if (!this.active) this.cursor = this.occupied = 0;
   }
 }
 

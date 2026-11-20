@@ -7,9 +7,12 @@
   ],
   "scripts": {
     "dev": "cd apps/game && vite --host 0.0.0.0",
+    "dev:zellij": "bun scripts/zellij-dev.ts",
     "shots": "bun scripts/mobile-shots.ts",
-    "playtest": "node --env-file-if-exists=apps/game/.env.local scripts/playtest.ts",
+    "playtest": "node scripts/playtest.ts",
     "build": "cd apps/game && vite build",
+    "start": "cd apps/game && vite preview --host 0.0.0.0",
+    "start:zellij": "bun scripts/zellij-dev.ts --start",
     "relay": "cd apps/relay && wrangler dev --port 8787 --ip 127.0.0.1",
     "check": "biome check . && tsc --noEmit -p apps/game/tsconfig.json && cd apps/relay && wrangler types && tsc --noEmit",
     "test": "bun test"

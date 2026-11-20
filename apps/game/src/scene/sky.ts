@@ -4,7 +4,7 @@ import type { Budget } from "./quality";
 
 export type Look = "day" | "golden" | "dusk" | "night" | "dawn" | "eclipse";
 
-type Preset = {
+export type Preset = {
   top: string;
   horizon: string;
   bottom: string;
@@ -22,6 +22,9 @@ type Preset = {
   exposure: number;
   plaza: number;
 };
+
+/** Per-map tweaks layered over the shared looks. */
+export type Mood = Partial<Record<Look, Partial<Preset>>>;
 
 const presets: Record<Look, Preset> = {
   day: {
@@ -225,9 +228,10 @@ export class Atmosphere {
     private scene: T.Scene,
     budget: Budget,
     materials: Materials,
+    private mood: Mood = {},
   ) {
-    this.state = stateFrom(presets.dusk);
-    this.target = stateFrom(presets.dusk);
+    this.state = this.preset("dusk");
+    this.target = this.preset("dusk");
     this.fog = new T.Fog(this.state.fog, this.state.near, this.state.far);
     scene.fog = this.fog;
     this.dome = new T.Mesh(
@@ -355,6 +359,10 @@ export class Atmosphere {
     this.set("dusk", true);
   }
 
+  private preset(look: Look) {
+    return stateFrom({ ...presets[look], ...this.mood[look] });
+  }
+
   get night() {
     return this.state.night;
   }
@@ -362,10 +370,18 @@ export class Atmosphere {
     return this.state.glow;
   }
 
+  setShadows(enabled: boolean) {
+    this.sun.castShadow = enabled;
+  }
+
+  setOutdoors(outside: boolean) {
+    this.plazaLight.visible = outside;
+  }
+
   set(look: Look, immediate = false) {
     this.look = look;
-    this.target = stateFrom(presets[look]);
-    if (immediate) this.state = stateFrom(presets[look]);
+    this.target = this.preset(look);
+    if (immediate) this.state = this.preset(look);
     const uniforms = this.dome.material.uniforms;
     uniforms.uTop.value = this.state.top;
     uniforms.uHorizon.value = this.state.horizon;

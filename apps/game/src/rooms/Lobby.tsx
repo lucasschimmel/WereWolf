@@ -1,24 +1,29 @@
 import { useMutation } from "convex/react";
-import { Check, Copy, Play, Sparkles } from "lucide-react";
+import { Check, Copy, Play, Settings2, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { percent } from "../../shared/match-options";
 import {
   cardFor,
-  characters,
   deckFor,
   defaultSettings,
   type Mode,
   maxPlayers,
   minForMode,
   modes,
+  optionalRoles,
   type Role,
+  roleAvailable,
+  roleChance,
   type Settings,
 } from "../../shared/rules";
 import type { Credentials } from "../session";
 import { RoleCard } from "../ui/cards";
 import { Drawer } from "../ui/controls";
 import { LookPicker } from "../ui/LookPicker";
+import { MatchConfiguration } from "./MatchConfiguration";
 import type { View } from "./model";
+import { SoloSetup } from "./SoloSetup";
 import { Workshop } from "./Workshop";
 
 const presetKey = "werewolf.workshop";
@@ -28,6 +33,7 @@ const blurbs: Record<Mode, string> = {
   mystery: "Les cartes des morts restent secrètes.",
   chaos: "Un Bouffon se glisse parmi vous.",
   workshop: "Ton paquet, avec tes cartes inventées.",
+  custom: "Choisis les cartes du paquet et leur quantité.",
 };
 
 function workshopPreset(): Settings {
@@ -47,8 +53,7 @@ function deckSummary(deck: Role[], settings: Settings) {
   return [...counts]
     .map(([role, count]) => {
       const name = cardFor(role, settings).name;
-      const plural = /[sx]$/.test(name) ? name : `${name}s`;
-      return count > 1 ? `${count} ${plural}` : name;
+      return count > 1 ? `${count} × ${name}` : name;
     })
     .join(" · ");
 }
@@ -73,19 +78,20 @@ export function Lobby({
   const update = useMutation(api.rooms.profile);
   const configure = useMutation(api.rooms.configure);
   const start = useMutation(api.rooms.start);
+  const setup = useMutation(api.rooms.soloSetup);
   const leave = useMutation(api.rooms.leave);
   const [workshop, setWorkshop] = useState(false);
+  const [configuration, setConfiguration] = useState(false);
   const [preview, setPreview] = useState<Role>();
   const me = room.members.find((member) => member.id === room.me);
   if (!me) return null;
   const mode = room.settings.mode;
+  const solo = !!room.solo;
+  const count = Math.max(room.members.length, minForMode(mode));
   let deck: Role[] = [];
   let deckError = "";
   try {
-    deck = deckFor(
-      Math.min(maxPlayers, Math.max(room.members.length, minForMode(mode))),
-      room.settings,
-    );
+    deck = deckFor(count, room.settings);
   } catch (cause) {
     deckError = cause instanceof Error ? cause.message : "Paquet invalide.";
   }
@@ -96,7 +102,7 @@ export function Lobby({
     ? deckError
     : missing > 0
       ? `Encore ${missing} joueur${missing > 1 ? "s" : ""} à inviter`
-      : waiting.length > 0
+      : waiting.length > 0 && !solo
         ? `${waiting.map((member) => member.name).join(", ")} ${waiting.length > 1 ? "ne sont" : "n’est"} pas encore prêt${waiting.length > 1 ? "s" : ""}`
         : "";
   const choose = (value: Mode) =>
@@ -116,15 +122,15 @@ export function Lobby({
         <h2 id="lobby-me">{me.name}</h2>
         <LookPicker
           look={me.character}
-          onPick={(index) =>
-            void act(() =>
-              update({
-                ...credentials,
-                character:
-                  ((index % characters.length) + characters.length) %
-                  characters.length,
-              }),
+          taken={
+            new Map(
+              room.members
+                .filter((member) => member.id !== me.id)
+                .map((member) => [member.character, member.name]),
             )
+          }
+          onPick={(index) =>
+            void act(() => update({ ...credentials, character: index }))
           }
         />
         {!room.isHost && (
@@ -158,28 +164,47 @@ export function Lobby({
           </button>
         </div>
         <label className="field">
-          <span>Mode{room.isHost ? "" : " · choisi par l’hôte"}</span>
+          <span>Préréglage{room.isHost ? "" : " · choisi par l’hôte"}</span>
           <select
             value={mode}
             disabled={!room.isHost}
             onChange={(event) => choose(event.target.value as Mode)}
           >
             {(Object.keys(modes) as Mode[]).map((value) => (
-              <option
-                key={value}
-                value={value}
-                disabled={
-                  room.members.length < minForMode(value) &&
-                  minForMode(value) > 8
-                }
-              >
+              <option key={value} value={value}>
                 {modes[value]}
-                {minForMode(value) > 8 ? ` · dès ${minForMode(value)}` : ""}
+                {minForMode(value) > minForMode("classic")
+                  ? ` · dès ${minForMode(value)}`
+                  : ""}
               </option>
             ))}
           </select>
           <small>{blurbs[mode]}</small>
         </label>
+        <button
+          type="button"
+          className="secondary"
+          aria-expanded={configuration}
+          onClick={() => setConfiguration(true)}
+        >
+          <Settings2 size={16} />
+          {room.isHost && mode === "custom"
+            ? "Composer le paquet"
+            : "Voir le paquet"}
+        </button>
+        {solo && (
+          <SoloSetup
+            count={room.members.length}
+            mode={mode}
+            deck={deck}
+            settings={room.settings}
+            role={room.solo?.role}
+            onCount={(players) =>
+              void act(() => setup({ ...credentials, players }))
+            }
+            onRole={(role) => void act(() => setup({ ...credentials, role }))}
+          />
+        )}
         {mode === "workshop" && room.isHost && (
           <button
             type="button"
@@ -189,6 +214,46 @@ export function Lobby({
             <Sparkles size={16} /> Atelier de cartes
           </button>
         )}
+        {room.isHost &&
+          mode === "workshop" &&
+          optionalRoles.some((role) =>
+            roleAvailable(role, room.members.length, mode),
+          ) && (
+            <details>
+              <summary>Cartes optionnelles</summary>
+              {optionalRoles
+                .filter((role) =>
+                  roleAvailable(role, room.members.length, mode),
+                )
+                .map((role) => {
+                  const count = room.members.length;
+                  const on =
+                    roleChance(role, count, room.settings) === percent.max;
+                  const settings: Settings = {
+                    ...room.settings,
+                    roleOverrides: {
+                      ...room.settings.roleOverrides,
+                      [role]: !on,
+                    },
+                  };
+                  return (
+                    <label key={role} className="check">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() =>
+                          void act(async () => {
+                            deckFor(count, settings);
+                            await configure({ ...credentials, settings });
+                          })
+                        }
+                      />{" "}
+                      {cardFor(role, room.settings).name}
+                    </label>
+                  );
+                })}
+            </details>
+          )}
         <div className="deck">
           <span className="field-label">Le paquet</span>
           {deckError ? (
@@ -214,17 +279,19 @@ export function Lobby({
           )}
         </div>
         <div className="lobby-actions">
-          <button
-            type="button"
-            className={me.ready ? "secondary on" : "secondary"}
-            aria-pressed={me.ready}
-            onClick={() =>
-              void act(() => update({ ...credentials, ready: !me.ready }))
-            }
-          >
-            {me.ready && <Check size={18} />}{" "}
-            {me.ready ? "Prêt" : "Je suis prêt"}
-          </button>
+          {!solo && (
+            <button
+              type="button"
+              className={me.ready ? "secondary on" : "secondary"}
+              aria-pressed={me.ready}
+              onClick={() =>
+                void act(() => update({ ...credentials, ready: !me.ready }))
+              }
+            >
+              {me.ready && <Check size={18} />}{" "}
+              {me.ready ? "Prêt" : "Je suis prêt"}
+            </button>
+          )}
           {room.isHost && (
             <button
               type="button"
@@ -232,17 +299,40 @@ export function Lobby({
               disabled={!!blocker}
               onClick={() => void act(() => start(credentials))}
             >
-              <Play size={16} /> Lancer · {readyCount}/{room.members.length}{" "}
-              prêts
+              <Play size={16} />{" "}
+              {solo
+                ? "Lancer la partie"
+                : `Lancer · ${readyCount}/${room.members.length} prêts`}
             </button>
           )}
         </div>
       </section>
 
       <p className="footnote">
-        {blocker || "Tout le monde est prêt."} · {room.members.length}/
-        {maxPlayers} sur la place
+        {blocker || (solo ? "Table solo prête." : "Tout le monde est prêt.")} ·{" "}
+        {room.members.length}/{maxPlayers} sur la place
       </p>
+
+      <Drawer
+        open={configuration}
+        title="Composition du paquet"
+        onClose={() => setConfiguration(false)}
+      >
+        <MatchConfiguration
+          settings={room.settings}
+          count={count}
+          deck={deck}
+          save={
+            room.isHost && mode === "custom"
+              ? (settings) =>
+                  act(async () => {
+                    await configure({ ...credentials, settings });
+                    setConfiguration(false);
+                  })
+              : undefined
+          }
+        />
+      </Drawer>
 
       <Drawer
         open={workshop}
@@ -251,7 +341,6 @@ export function Lobby({
       >
         <Workshop
           settings={room.settings}
-          count={room.members.length}
           save={(settings) =>
             void act(async () => {
               deckFor(Math.max(room.members.length, 8), settings);

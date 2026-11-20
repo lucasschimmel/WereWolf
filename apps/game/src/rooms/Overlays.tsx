@@ -16,6 +16,7 @@ const campGems: Record<string, string> = {
 export function WitchTurn({
   room,
   potions,
+  disabled,
   onHeal,
   onPoison,
   onClearPoison,
@@ -23,6 +24,7 @@ export function WitchTurn({
 }: {
   room: View;
   potions: NonNullable<MatchView["potions"]>;
+  disabled: boolean;
   onHeal: (on: boolean) => void;
   onPoison: () => void;
   onClearPoison: () => void;
@@ -49,6 +51,7 @@ export function WitchTurn({
             <button
               type="button"
               className="choice heal"
+              disabled={disabled}
               aria-pressed={heal}
               onClick={() => onHeal(!heal)}
             >
@@ -64,6 +67,7 @@ export function WitchTurn({
             <button
               type="button"
               className="choice poison"
+              disabled={disabled}
               aria-pressed
               onClick={onClearPoison}
             >
@@ -75,6 +79,7 @@ export function WitchTurn({
               <button
                 type="button"
                 className="choice poison"
+                disabled={disabled}
                 onClick={onPoison}
               >
                 <b>Poison · aller sur la place</b>
@@ -88,15 +93,10 @@ export function WitchTurn({
           <button
             type="button"
             className="choice done"
-            disabled={potions.done}
+            disabled={disabled}
             onClick={onDone}
           >
-            <b>{potions.done ? "Validé" : "Valider"}</b>
-            <small>
-              {potions.done
-                ? "La nuit avance dans un instant"
-                : "Termine ton tour sans attendre"}
-            </small>
+            <b>Valider le tour</b>
           </button>
         </div>
       </div>
@@ -175,13 +175,24 @@ export function EndScreen({
     ],
     draw: ["Partie nulle", "Personne ne triomphe."],
   } as const;
-  const [title, detail] = verdicts[outcome];
+  const soloWinner = room.members.find((entry) => entry.id === match.winner);
+  const [title, detail] =
+    outcome === "solo" && soloWinner?.role && soloWinner.role !== "jester"
+      ? [
+          `Le ${cardFor(soloWinner.role, room.settings).name} l’emporte`,
+          `${soloWinner.name} est le dernier survivant.`,
+        ]
+      : verdicts[outcome];
   const myRole = me?.role as Role | undefined;
   const settings: Settings = room.settings;
   const won =
     outcome !== "draw" &&
     myRole !== undefined &&
-    cardFor(myRole, settings).camp === outcome;
+    (outcome === "solo"
+      ? match.winner
+        ? match.winner === room.me
+        : myRole === "jester"
+      : cardFor(myRole, settings).camp === outcome);
   return (
     <section
       className={`finale outcome-${outcome}`}
