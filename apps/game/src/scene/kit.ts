@@ -209,6 +209,32 @@ export class Builder {
   }
 }
 
+const up = new T.Vector3(0, 1, 0);
+
+/** A round pole between two points, for staffs, rods and tools held in hand. */
+export function pole(
+  b: Builder,
+  color: T.ColorRepresentation,
+  radius: number,
+  from: Vec3,
+  to: Vec3,
+  segments = 5,
+) {
+  const start = new T.Vector3(...from);
+  const span = new T.Vector3(...to).sub(start);
+  const turn = new T.Euler().setFromQuaternion(
+    new T.Quaternion().setFromUnitVectors(up, span.clone().normalize()),
+  );
+  const center = start.addScaledVector(span, 0.5);
+  return b.cylinder(
+    color,
+    [radius, radius, span.length()],
+    [center.x, center.y, center.z],
+    [turn.x, turn.y, turn.z],
+    segments,
+  );
+}
+
 /** Distance-based detail with hysteresis, independently of the viewport size. */
 export class SceneryLod extends T.LOD {
   constructor(

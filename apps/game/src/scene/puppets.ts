@@ -1,7 +1,8 @@
 import * as T from "three";
 import { characters } from "../../shared/rules";
-import { Builder, type Materials, rng } from "./kit";
+import { Builder, type Materials, pole, rng, type Vec3 } from "./kit";
 import { dampAngle, type Pose, wrap } from "./layout";
+import { outfits } from "./outfits";
 
 const skins = [
   "#e9b590",
@@ -59,6 +60,8 @@ function head(
   b.box("#7a3d38", [0.08, 0.018, 0.012], [0, 0.135, -0.25]);
   if (index !== 0 && index !== 2)
     b.ball(hair, [0.275, 0.25, 0.275], [0, 0.33, 0.05], undefined, 1);
+  const custom = outfits[characters[index].id];
+  if (custom) return custom.head(b, { outfit, trim, hair });
   switch (index) {
     case 0:
       b.ball(outfit, [0.31, 0.31, 0.3], [0, 0.29, 0.06], undefined, 1);
@@ -131,6 +134,8 @@ function build(index: number): Parts {
     torso.box(outfit, [0.52, 0.72, 0.05], [0, 0.28, 0.25], [-0.12, 0, 0]);
   if (index === 6) torso.box("#6b4a36", [0.38, 0.55, 0.03], [0, 0.22, -0.27]);
   if (index === 2) torso.box("#7a5838", [0.16, 0.2, 0.1], [0.27, 0.12, 0.05]);
+  const custom = outfits[characters[index].id];
+  custom?.torso?.(torso, { outfit, trim, hair });
 
   const headBuilder = new Builder(random, 0.02);
   head(headBuilder, index, skin, hair, outfit, trim);
@@ -148,14 +153,22 @@ function build(index: number): Parts {
       b.box("#3b2f2c", [0.17, 0.04, 0.17], [0, -0.9, 0]);
     }
     if (side > 0 && index === 5) {
+      // A hand bell: the handle sits in the fist, the bell hangs below it.
       b.cylinder(
         "#6b4c34",
-        [0.025, 0.025, 1.7],
-        [0, -0.35, -0.02],
+        [0.022, 0.022, 0.2],
+        [0, -0.52, -0.02],
         undefined,
         5,
       );
-      b.cone("#b8bcc4", 0.06, 0.2, [0, 0.6, -0.02], undefined, 4);
+      b.cylinder(
+        "#b8863b",
+        [0.05, 0.12, 0.15],
+        [0, -0.68, -0.02],
+        undefined,
+        9,
+      );
+      b.ball("#8a6428", 0.035, [0, -0.77, -0.02]);
     }
     if (side > 0 && index === 6) {
       b.cylinder(
@@ -168,30 +181,18 @@ function build(index: number): Parts {
       b.box("#4a4a50", [0.12, 0.12, 0.2], [0, -0.55, -0.35]);
     }
     if (side < 0 && index === 4) {
-      b.cylinder(
-        "#8a6a44",
-        [0.022, 0.022, 1.5],
-        [0, -0.32, -0.04],
-        undefined,
-        5,
-      );
-      b.cylinder(
-        "#8a6a44",
-        [0.022, 0.022, 0.22],
-        [0, 0.45, -0.12],
-        [0.9, 0, 0],
-        5,
-      );
+      // The crook rests on the ground and leans out, clear of the wide brim.
+      const top: Vec3 = [side * 0.22, 0.85, -0.31];
+      pole(b, "#8a6a44", 0.022, [side * -0.074, -1.24, 0.077], top);
+      const bend: Vec3 = [side * 0.3, 0.95, -0.4];
+      pole(b, "#8a6a44", 0.022, top, bend);
+      pole(b, "#8a6a44", 0.022, bend, [side * 0.34, 0.86, -0.48]);
     }
     if (side < 0 && index === 3) {
-      b.cylinder(
-        "#6b4c34",
-        [0.018, 0.018, 1.3],
-        [0, -0.3, -0.15],
-        [0.35, 0, 0],
-        4,
-      );
+      // The rod runs through the fist and points up and away from the body.
+      pole(b, "#6b4c34", 0.018, [0, -0.62, 0.03], [side * 0.15, 0.5, -0.75], 4);
     }
+    custom?.hand?.(b, side);
     return b.build();
   };
   const leg = new Builder(random, 0.03)
