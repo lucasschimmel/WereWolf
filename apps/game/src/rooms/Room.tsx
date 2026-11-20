@@ -34,7 +34,7 @@ import { Lobby } from "./Lobby";
 import type { MatchView } from "./model";
 import { EndScreen, Vision, WitchTurn } from "./Overlays";
 import { RotatePrompt, TargetPicker } from "./Picker";
-import { usePresence } from "./presence";
+import { usePresence, usePresenceHeartbeat } from "./presence";
 
 const Village = lazy(() => import("../scene/Village"));
 type Panel = "roster" | "journal" | "settings" | "chat" | null;
@@ -152,8 +152,8 @@ function RoomContent({
   credentials: Credentials;
   back: (forget: boolean) => void;
 }) {
-  const raw = useQuery(api.game.view, credentials);
-  const beat = useMutation(api.game.beat);
+  const room = useQuery(api.game.view, credentials);
+  usePresenceHeartbeat(credentials);
   const motion = useMotion(credentials);
   const choose = useMutation(api.game.choose);
   const pause = useMutation(api.game.pause);
@@ -178,34 +178,9 @@ function RoomContent({
       3600,
     );
   }, []);
-  const offline = usePresence(raw, now, notify);
-  // Disconnected players vanish from the village (and their card with them).
-  const room = useMemo(
-    () =>
-      raw && offline.size > 0
-        ? {
-            ...raw,
-            members: raw.members.filter((member) => !offline.has(member.id)),
-          }
-        : raw,
-    [raw, offline],
-  );
+  const presence = usePresence(room, now, notify);
   const match = room?.match ?? null;
 
-  const { code, key } = credentials;
-  useEffect(() => {
-    const ping = () => {
-      if (document.visibilityState === "visible")
-        beat({ code, key }).catch(() => undefined);
-    };
-    ping();
-    const timer = window.setInterval(ping, 10_000);
-    document.addEventListener("visibilitychange", ping);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", ping);
-    };
-  }, [beat, code, key]);
   const act = useCallback(
     async (operation: () => Promise<unknown>) => {
       try {
@@ -571,6 +546,7 @@ function RoomContent({
       >
         <Roster
           room={room}
+          presence={presence}
           onKick={
             room.isHost && !match
               ? (id) => void act(() => kick({ ...credentials, playerId: id }))
@@ -590,7 +566,7 @@ function RoomContent({
                 ? [...match.events, ...match.audit]
                 : match.events
             }
-            members={raw?.members ?? room.members}
+            members={room.members}
             settings={room.settings}
             audit={ended}
           />

@@ -8,6 +8,7 @@ import {
   phase,
   role,
   settings,
+  tabPresenceReport,
 } from "./validators";
 export default defineSchema({
   rooms: defineTable({
@@ -25,8 +26,11 @@ export default defineSchema({
     name: v.string(),
     character: v.number(),
     ready: v.boolean(),
-    /** Last heartbeat (epoch ms); drives the presence toasts. */
+    /** Last heartbeat from clients using the original presence protocol. */
     seen: v.optional(v.number()),
+    tabs: v.optional(
+      v.array(v.object({ ...tabPresenceReport, at: v.number() })),
+    ),
   })
     .index("by_room", ["room"])
     .index("by_seat", ["room", "key"]),

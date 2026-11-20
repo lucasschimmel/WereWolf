@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { normalizePose } from "../shared/motion";
+import { recordPresence } from "../shared/presence";
 import { isDayBallot, isNight } from "../shared/rules";
 import { signTicket, ticketLifetime } from "../shared/ticket";
 import { internal } from "./_generated/api";
@@ -15,7 +16,7 @@ import {
   turnAbility,
 } from "./engine";
 import { publicTiming, schedule, settleEarly } from "./phases";
-import { credentials } from "./validators";
+import { credentials, tabPresenceReport } from "./validators";
 
 export const view = query({
   args: credentials,
@@ -27,23 +28,26 @@ export const view = query({
     const deaths = new Set(
       match?.events.flatMap((event) => event.deaths ?? []),
     );
-    const members = players.map(({ _id, name, character, ready, seen }) => ({
-      id: _id,
-      seen: seen ?? 0,
-      name,
-      character,
-      ready,
-      host: _id === room.host,
-      alive: !deaths.has(_id),
-      role:
-        match &&
-        (ended ||
-          (deaths.has(_id) &&
-            room.settings.mode !== "mystery" &&
-            (room.settings.mode !== "workshop" || room.settings.reveal)))
-          ? match.seats[_id].role
-          : undefined,
-    }));
+    const members = players.map(
+      ({ _id, name, character, ready, seen, tabs }) => ({
+        id: _id,
+        seen: seen ?? 0,
+        tabs,
+        name,
+        character,
+        ready,
+        host: _id === room.host,
+        alive: !deaths.has(_id),
+        role:
+          match &&
+          (ended ||
+            (deaths.has(_id) &&
+              room.settings.mode !== "mystery" &&
+              (room.settings.mode !== "workshop" || room.settings.reveal)))
+            ? match.seats[_id].role
+            : undefined,
+      }),
+    );
     const base = {
       code: room.code,
       settings: room.settings,
@@ -299,12 +303,25 @@ export const ticket = mutation({
   },
 });
 
-/** Presence heartbeat: clients ping while the room is open. */
+/** Browser presence reports are independent of seat membership. */
 export const beat = mutation({
-  args: credentials,
-  handler: async (ctx, { code, key }) => {
+  args: { ...credentials, report: v.optional(v.object(tabPresenceReport)) },
+  handler: async (ctx, { code, key, report }) => {
     const { player } = await access(ctx, code, key);
-    await ctx.db.patch(player._id, { seen: Date.now() });
+    const at = Date.now();
+    if (!report) {
+      await ctx.db.patch(player._id, { seen: at });
+      return;
+    }
+    if (
+      !/^[0-9a-f]{32}$/.test(report.tab) ||
+      !Number.isSafeInteger(report.revision) ||
+      report.revision < 1
+    )
+      fail("Signal de présence invalide.");
+    const tabs = recordPresence(player.tabs ?? [], { ...report, at });
+    if (tabs !== player.tabs)
+      await ctx.db.patch(player._id, { tabs, seen: at });
   },
 });
 

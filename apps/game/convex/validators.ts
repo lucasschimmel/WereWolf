@@ -1,4 +1,14 @@
 import { v } from "convex/values";
+export const presenceStatus = v.union(
+  v.literal("active"),
+  v.literal("inactive"),
+  v.literal("disconnected"),
+);
+export const tabPresenceReport = {
+  tab: v.string(),
+  revision: v.number(),
+  status: presenceStatus,
+};
 export const role = v.union(
   v.literal("villager"),
   v.literal("wolf"),
